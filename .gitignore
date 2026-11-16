@@ -1,0 +1,13 @@
+# environments and builds
+.venv/
+venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# secrets and local data - never commit
+.env
+settings.json
+*.log
