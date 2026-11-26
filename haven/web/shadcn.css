@@ -1,0 +1,170 @@
+/* Haven on the shadcn/ui design system (https://ui.shadcn.com, MIT): its "neutral" theme tokens, Geist type,
+   radii, shadows and component styles (Button, Toggle, Input, Card, Dialog, Switch, Kbd, Sidebar), mapped onto
+   Haven's own class names. Loaded after the base stylesheet, so everything here wins. Offline: no CDN. */
+@font-face{font-family:"Geist";font-weight:400;font-display:swap;src:url(/fonts/geist-sans-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Geist";font-weight:500;font-display:swap;src:url(/fonts/geist-sans-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Geist";font-weight:600;font-display:swap;src:url(/fonts/geist-sans-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Geist";font-weight:700;font-display:swap;src:url(/fonts/geist-sans-latin-700-normal.woff2) format("woff2")}
+
+/* ---------- tokens: shadcn "neutral" (oklch values written as their sRGB hex) ---------- */
+:root{
+  --bg:#ffffff; --surface:#ffffff; --raised:#ffffff; --sunken:#f5f5f5; --side-bg:#fafafa;
+  --glass:rgba(255,255,255,.92); --line:#e5e5e5; --line-2:#d4d4d4; --ring:#a1a1a1;
+  --ink:#0a0a0a; --ink-2:#525252; --ink-3:#666666;
+  --brand:#171717; --brand-2:#404040; --brand-ink:#fafafa; --brand-soft:#f5f5f5; --brand-text:#171717;
+  --grad:#171717;
+  --t-pdf:#404040; --t-pdf-bg:#f5f5f5; --t-conv:#404040; --t-conv-bg:#f5f5f5;
+  --t-ai:#404040; --t-ai-bg:#f5f5f5; --t-office:#404040; --t-office-bg:#f5f5f5;
+  --ok:#15803d; --warn:#b45309; --err:#dc2626; --cloud:#0369a1;
+  --r-s:8px; --r:10px; --r-l:12px; --r-xl:16px;
+  --sh-1:0 1px 2px 0 rgba(0,0,0,.05);
+  --sh-2:0 1px 3px 0 rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1);
+  --sh-3:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);
+  --font:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+:root[data-theme=dark]{
+  --bg:#0a0a0a; --surface:#171717; --raised:#171717; --sunken:#262626; --side-bg:#111111;
+  --glass:rgba(10,10,10,.92); --line:#262626; --line-2:#3a3a3a; --ring:#737373;
+  --ink:#fafafa; --ink-2:#a1a1a1; --ink-3:#949494;
+  --brand:#e5e5e5; --brand-2:#d4d4d4; --brand-ink:#171717; --brand-soft:#262626; --brand-text:#fafafa;
+  --grad:#e5e5e5;
+  --t-pdf:#d4d4d4; --t-pdf-bg:#262626; --t-conv:#d4d4d4; --t-conv-bg:#262626;
+  --t-ai:#d4d4d4; --t-ai-bg:#262626; --t-office:#d4d4d4; --t-office-bg:#262626;
+  --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --cloud:#7dd3fc;
+  --sh-1:0 1px 2px 0 rgba(0,0,0,.4); --sh-2:0 1px 3px 0 rgba(0,0,0,.5); --sh-3:0 10px 15px -3px rgba(0,0,0,.5),0 4px 6px -4px rgba(0,0,0,.5);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0a0a0a; --surface:#171717; --raised:#171717; --sunken:#262626; --side-bg:#111111;
+  --glass:rgba(10,10,10,.92); --line:#262626; --line-2:#3a3a3a; --ring:#737373;
+  --ink:#fafafa; --ink-2:#a1a1a1; --ink-3:#949494;
+  --brand:#e5e5e5; --brand-2:#d4d4d4; --brand-ink:#171717; --brand-soft:#262626; --brand-text:#fafafa;
+  --grad:#e5e5e5;
+  --t-pdf:#d4d4d4; --t-pdf-bg:#262626; --t-conv:#d4d4d4; --t-conv-bg:#262626;
+  --t-ai:#d4d4d4; --t-ai-bg:#262626; --t-office:#d4d4d4; --t-office-bg:#262626;
+  --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --cloud:#7dd3fc;
+  --sh-1:0 1px 2px 0 rgba(0,0,0,.4); --sh-2:0 1px 3px 0 rgba(0,0,0,.5); --sh-3:0 10px 15px -3px rgba(0,0,0,.5),0 4px 6px -4px rgba(0,0,0,.5);
+}}
+html{font-size:14.5px}
+@media (min-width:1500px){html{font-size:15.5px}}
+body{letter-spacing:-.006em;font-feature-settings:"rlig" 1,"calt" 1}
+:focus-visible{outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 50%,transparent)!important}
+::selection{background:color-mix(in srgb,var(--ink) 15%,transparent)}
+
+/* ---------- frame ---------- */
+.aurora{display:none}
+.side{background:var(--side-bg);border-right:1px solid var(--line)}
+.top{background:var(--glass);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.brand{font-weight:600;font-size:1rem;letter-spacing:-.02em}
+.brand .mark,.hero .arch,.a .av{background:var(--brand);box-shadow:none;border-radius:8px}
+.brand .mark svg,.hero .arch svg,.a .av svg{color:var(--brand-ink);stroke:var(--brand-ink)}
+.a .av.err{background:var(--err)}
+.ib{width:34px;height:34px;border-radius:var(--r-s)}
+.ib:hover,.me:hover,.conv:hover,.tab:hover{background:var(--sunken)}
+
+/* Button (outline / default / ghost) */
+.btn,.newchat,.chip,.tile,.act,.tg,.imgmodel,.pill,.retry button,.sel,.code-h button{
+  border-radius:var(--r-s)!important;border:1px solid var(--line);background:var(--surface);color:var(--ink);box-shadow:var(--sh-1);
+  font-weight:500;transition:background .15s,color .15s,border-color .15s,box-shadow .15s}
+.btn:hover,.newchat:hover,.chip:hover,.tile:hover,.act:hover,.tg:hover,.imgmodel:hover,.pill:hover,.retry button:hover{
+  background-color:var(--sunken);border-color:var(--line);box-shadow:var(--sh-1);color:var(--ink)}
+.btn{height:36px;padding:0 1rem;font-size:.9rem}
+.btn.small{height:30px;padding:0 .7rem;font-size:.82rem}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.btn.primary:hover{background:color-mix(in srgb,var(--brand) 90%,var(--bg));color:var(--brand-ink);filter:none}
+.btn.ghost{background:none;border-color:transparent;box-shadow:none;color:var(--ink-2)}
+.btn.ghost:hover{background:var(--sunken);color:var(--ink)}
+.newchat{height:36px;font-weight:500}
+
+/* sidebar items (shadcn Sidebar menu buttons) */
+.convs .grp{font-size:.75rem;font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-3)}
+.conv{border-radius:var(--r-s);color:var(--ink-2)}
+.conv.on{background:var(--sunken);box-shadow:none;color:var(--ink);font-weight:500}
+.side-search input,.fld,.param .f,.tgt .num,.tgt select,.irow input,.conv input{
+  border-radius:var(--r-s);border:1px solid var(--line);background:transparent;box-shadow:var(--sh-1)}
+.side-search input:focus,.fld:focus,.param .f:focus,.irow input:focus,.conv input:focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 35%,transparent)}
+
+/* top-bar controls */
+.pill{height:34px;padding:0 .5rem 0 .7rem}
+.pill .tag,.badge{border-radius:6px;font-weight:500}
+.theme{border-radius:var(--r-s);background:var(--sunken);border-color:var(--line)}
+.theme button{border-radius:6px}
+.theme .knob{border-radius:6px;background:var(--bg);border-color:var(--line)}
+.theme button[aria-checked=true]{color:var(--ink)}
+
+/* empty state */
+.hero h1{font-weight:600;letter-spacing:-.035em}
+.hero h1 span{background:none;color:var(--ink)}
+.hero .arch{width:44px;height:44px;border-radius:12px}
+.chip{height:32px;font-size:.85rem;color:var(--ink-2)}
+.tile,.act{height:34px}
+.tile .d,.act .d,.pal li.it .d,.card .badge2,.c-pdf,.c-conv,.c-ai,.c-office{background:transparent;color:var(--ink-2)}
+.tile b{font-weight:500}
+
+/* messages */
+.u{background:var(--sunken);color:var(--ink);border-radius:var(--r-l);box-shadow:none;padding:.55rem .9rem}
+.u .att span{background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.cite{background:var(--sunken);color:var(--ink-2)}
+.cite:hover,.cite:focus-visible{background:var(--line);color:var(--ink)}
+.md .lnk{color:var(--ink);text-decoration-color:var(--line-2)}
+.md :not(pre)>code{background:var(--sunken);border-radius:6px}
+.md .code{border-radius:var(--r);background:var(--side-bg)}
+.chipbtn{border-radius:var(--r-s)}
+.note{border-radius:var(--r-s)}
+.card{border-radius:var(--r-l);box-shadow:var(--sh-1)}
+.pic img{border-radius:var(--r-l)}
+
+/* composer (shadcn chat input: a Card with a borderless Textarea and a toolbar) */
+.composer{border-radius:var(--r-xl);border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh-2);padding:.7rem .7rem .6rem .9rem}
+.composer::before{display:none}
+.composer:focus-within{border-color:var(--ring);box-shadow:var(--sh-2),0 0 0 3px color-mix(in srgb,var(--ring) 25%,transparent)}
+.crow{gap:.35rem;flex-wrap:nowrap;min-width:0}
+.tg{height:32px;padding:0 .65rem;font-size:.82rem;white-space:nowrap;color:var(--ink-2);flex:none}
+.tg[aria-pressed="true"]{background:var(--sunken);border-color:var(--line-2);color:var(--ink)}
+.tg.shield{border-color:transparent;box-shadow:none;background:none}
+.tg.shield[aria-pressed="true"]{background:none;color:var(--ink-2)}
+.tg.shield[aria-pressed="true"] svg{color:var(--ok)}
+.tg.shield[aria-pressed="false"]{color:var(--warn);background:none}
+.imgmodel{height:32px;flex:0 1 auto;width:auto;min-width:0;max-width:200px;padding:0 1.6rem 0 .65rem;font-size:.82rem;color:var(--ink);
+  appearance:none;-webkit-appearance:none;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right .45rem center}
+.imgmodel option{background:var(--raised);color:var(--ink)}
+.send{width:34px;height:34px;border-radius:var(--r-s);background:var(--brand);color:var(--brand-ink);box-shadow:none;flex:none}
+.send:hover{filter:none;background:color-mix(in srgb,var(--brand) 88%,var(--bg))}
+.send:disabled{opacity:.4}
+.send.stop{background:var(--brand);color:var(--brand-ink)}
+.fchip{border-radius:var(--r);box-shadow:var(--sh-1)}
+.fchip .ft{border-radius:6px}
+.param{border-radius:var(--r-l);border-color:var(--line);box-shadow:var(--sh-2)}
+
+/* Kbd */
+kbd{font:500 .7rem var(--font);padding:.1rem .35rem;border:0;border-radius:4px;background:var(--sunken);color:var(--ink-2)}
+
+/* popovers, command palette, dialog */
+.popmenu,.picker,.pal,.citetip{border-radius:var(--r-l);box-shadow:var(--sh-3)}
+.popmenu{padding:.25rem}
+.popmenu button,.picker li.m,.pal li.it{border-radius:6px}
+.popmenu button:hover,.pal li.it.on,.picker li.m:hover{background:var(--sunken)}
+.picker .grp,.pal .grp{font-size:.75rem;font-weight:500;letter-spacing:0;text-transform:none}
+.dlg{border-radius:var(--r-l)!important;box-shadow:var(--sh-3)}
+.dlg-nav{background:var(--side-bg)}
+.dlg-nav h2{font-weight:600}
+.tab{border-radius:var(--r-s);height:34px}
+.tab.on{background:var(--sunken);box-shadow:none;font-weight:500}
+.tabp h3{font-weight:600}
+.plist{border-radius:var(--r-l);box-shadow:var(--sh-1)}
+.tag{border-radius:6px}
+
+/* Switch */
+.switch{width:36px;height:20px}
+.switch span{background:var(--line-2)}
+.switch span::after{top:2px;left:2px;width:16px;height:16px;background:var(--bg);box-shadow:var(--sh-1)}
+.switch input:checked+span{background:var(--brand)}
+.switch input:checked+span::after{transform:translateX(16px)}
+
+/* Toast (Sonner) */
+.toast{background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-s);box-shadow:var(--sh-3)}
+.toast button{color:var(--ink);text-decoration:underline}
+.tip{border-radius:6px;background:var(--brand);color:var(--brand-ink)}
+::-webkit-scrollbar-thumb{background:var(--line-2);border:3px solid var(--bg)}
+.composer textarea:focus-visible,.side-search input:focus-visible,.pal input:focus-visible,.picker .q input:focus-visible{box-shadow:none!important}
