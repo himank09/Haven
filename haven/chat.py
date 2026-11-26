@@ -334,16 +334,28 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
             saver.write(final=True, stopped=True)
 
 
-async def image_stream(payload: dict) -> AsyncIterator[str]:
-    """Make a picture. Same NDJSON contract plus {"image": "<file name>"}.
+async def image_options(gem=None) -> list:
+    from haven import images
 
-    Services are tried in order (Settings -> Images): Gemini, Hugging Face, Cloudflare, Pollinations. When one is out of
-    free allowance (or refuses), the next one is tried and a note says so."""
+    gem = gem or next((c for _e, c in registry.configured() if c.kind == "gemini"), None)
+    names = []
+    if gem:
+        try:
+            names = await images.image_models(gem)
+        except ProviderError:
+            names = []
+    return images.options(names)
+
+
+async def image_stream(payload: dict) -> AsyncIterator[str]:
+    """Make a picture. Same NDJSON contract plus {"image": "<file name>"} and, when it fails, {"retry": [option ids]}.
+
+    payload["image_model"] is an option id from /api/image-models, or "auto": free options first, tried quietly
+    one after another; only the one that worked is named."""
     from haven import images
 
     prompt = next((m.get("content", "") for m in reversed(payload.get("messages") or []) if m.get("role") == "user"), "").strip()
     gem = next((c for _e, c in registry.configured() if c.kind == "gemini"), None)
-    order = images.chain(gem)
     saver = Saver(payload.get("save"), "")
     finished = False
     aspect = str(payload.get("aspect") or "")
@@ -353,14 +365,32 @@ async def image_stream(payload: dict) -> AsyncIterator[str]:
         saver.add(ev)
         if "image" in ev:
             saver.meta.setdefault("images", []).append(ev["image"])
+        if "retry" in ev:
+            saver.meta["retry"] = ev["retry"]
         return json.dumps(ev, ensure_ascii=False) + "\n"
 
+    async def run(opt: dict, sent: str):
+        oid = opt["id"]
+        if oid.startswith("gemini:"):
+            pics, text = await images.generate(gem, oid.split(":", 1)[1], sent, aspect)
+            if not pics:
+                raise ProviderError("Gemini answered without a picture.", 0, "server")
+            return pics, text
+        fn = {"hfspace": images.space_generate, "hf": images.hf_generate, "cf": images.cf_generate,
+              "pollinations": images.pollinations_generate}[oid]
+        return [await fn(sent, aspect)], ""
+
     try:
+        opts = await image_options(gem)
+        by_id = {o["id"]: o for o in opts}
+        want = str(payload.get("image_model") or "auto")
+        order = images.auto_order(opts) if want == "auto" else ([want] if want in by_id and by_id[want]["ready"] else [])
         if not prompt:
             yield out({"error": "Describe the picture you want."})
         elif not order:
-            yield out({"error": "No image service is set up. Open Settings → Images: Pollinations works with no account, "
-                                "or add a free Hugging Face or Cloudflare token."})
+            o = by_id.get(want)
+            yield out({"error": (o.get("setup") if o and o.get("setup") else "That image model isn't available right now.")})
+            yield out({"retry": [x for x in images.auto_order(opts) if x != want]})
         else:
             saver.write(final=False)
             sent = prompt
@@ -370,43 +400,32 @@ async def image_stream(payload: dict) -> AsyncIterator[str]:
                 summary = sh.summary("the image service")
                 if summary:
                     yield out({"note": summary})
-            last = None
-            for svc in order:
-                name = images.SERVICES[svc]
+            last, tried = None, []
+            for oid in order:
+                opt = by_id[oid]
+                tried.append(oid)
                 try:
-                    if svc == "gemini":
-                        names = await images.image_models(gem)
-                        if not names:
-                            raise ProviderError("This Gemini key can't see any image models.", 404, "not_found")
-                        model = payload.get("image_model") if payload.get("image_model") in names else names[0]
-                        pics, text = await images.generate(gem, model, sent, aspect)
-                        if not pics:
-                            raise ProviderError("Gemini answered without a picture.", 0, "server")
-                        label = model
-                    else:
-                        fn = {"hf": images.hf_generate, "cf": images.cf_generate, "pollinations": images.pollinations_generate}[svc]
-                        pics, text = [await fn(sent, aspect)], ""
-                        label = {"hf": "Stable Diffusion 3 on Hugging Face", "cf": "FLUX.1-schnell on Cloudflare",
-                                 "pollinations": "Pollinations"}[svc]
-                    saver.model = f"{gem.id}:{model}" if svc == "gemini" else f"images:{svc}"
-                    for data, mime in pics:
-                        yield out({"image": await asyncio.to_thread(images.save, data, mime)})
-                    if text:
-                        yield out({"content": text})
-                    yield out({"note": f"Made with {label}."})
-                    last = None
-                    break
+                    pics, text = await run(opt, sent)
                 except ProviderError as e:
                     last = redact(e.message, secrets)
-                    if svc != order[-1]:
-                        yield out({"note": f"{name}: {last} Trying {images.SERVICES[order[order.index(svc) + 1]]}…"})
+                    continue
                 except (asyncio.CancelledError, GeneratorExit):
                     raise
                 except Exception as e:
                     log_error(traceback.format_exc(), secrets)
-                    last = f"Something went wrong with {name} ({type(e).__name__}). Details are in errors.log."
+                    last = f"Something went wrong ({type(e).__name__}). Details are in errors.log."
+                    continue
+                saver.model = f"{gem.id}:{oid.split(':', 1)[1]}" if oid.startswith("gemini:") else f"images:{oid}"
+                for data, mime in pics:
+                    yield out({"image": await asyncio.to_thread(images.save, data, mime)})
+                if text:
+                    yield out({"content": text})
+                last = None
+                break
             if last:
-                yield out({"error": last})
+                lead = "Couldn't make the picture" + (f" with {by_id[order[0]]['label']}" if len(order) == 1 else "")
+                yield out({"error": f"{lead}. {last}"})
+                yield out({"retry": [x for x in images.auto_order(opts) if x not in tried]})
         saver.write(final=True)
         finished = True
         yield json.dumps({"done": True, "model": saver.model}) + "\n"

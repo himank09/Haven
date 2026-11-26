@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import re
 import uuid
 from pathlib import Path
@@ -79,8 +80,7 @@ async def generate(cfg: ProviderConfig, model: str, prompt: str, aspect: str = "
         raise network_error(e, cfg.name)
     if r.status_code != 200:
         if r.status_code == 429:
-            raise ProviderError("Google says this key has no image-generation quota (free Gemini keys usually can't make "
-                                "images). Turn on billing for the key in Google AI Studio, then try again.", 429, "quota")
+            raise ProviderError("Google didn't allow image generation for this key.", 429, "quota")
         raise human_error(r.status_code, cfg.name, r.text, r.headers.get("retry-after"), cfg.secrets(), model)
     j = r.json()
     block = (j.get("promptFeedback") or {}).get("blockReason")
@@ -106,14 +106,14 @@ async def generate(cfg: ProviderConfig, model: str, prompt: str, aspect: str = "
 HF_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers"  # FLUX.1-schnell was retired there (410)
 CF_URL = "https://api.cloudflare.com/client/v4/accounts/{acct}/ai/run/@cf/black-forest-labs/flux-1-schnell"
 POLL_URL = "https://image.pollinations.ai/prompt/{prompt}"
-SERVICES = {"gemini": "Google Gemini", "hf": "Hugging Face", "cf": "Cloudflare Workers AI", "pollinations": "Pollinations"}
-ORDER = ("gemini", "hf", "cf", "pollinations")
+# Free: the official FLUX.1-schnell demo Space (Gradio API, shared ZeroGPU time; a token gives the account's daily allowance)
+SPACE_URL = "https://black-forest-labs-flux-1-schnell.hf.space/gradio_api"
 SIZE = {"": (1024, 1024), "1:1": (1024, 1024), "16:9": (1344, 768), "9:16": (768, 1344), "4:3": (1152, 864), "3:4": (864, 1152)}
 
 
 def settings() -> dict:
     s = keystore.get_setting("images") or {}
-    return {"service": s.get("service", "auto"), "pollinations": s.get("pollinations", True), "cf_account": s.get("cf_account", "")}
+    return {"pollinations": s.get("pollinations", True), "cf_account": s.get("cf_account", "")}
 
 
 def token(service: str) -> str:
@@ -139,20 +139,37 @@ def set_token(service: str, value: str):
 
 def status() -> dict:
     s = settings()
-    out = {"service": s["service"], "pollinations": s["pollinations"], "cf_account": s["cf_account"], "services": {}}
+    out = {"pollinations": s["pollinations"], "cf_account": s["cf_account"], "services": {}}
     for k in ("hf", "cf"):
         t = token(k)
         out["services"][k] = {"saved": bool(t), "hint": keystore.hint(t) if t else ""}
     return out
 
 
-def chain(gem: Optional[ProviderConfig]) -> List[str]:
+GEMINI_LABEL = {"gemini-3.1-flash-lite-image": "Nano Banana 2 Lite", "gemini-3.1-flash-image": "Nano Banana 2",
+                "gemini-2.5-flash-image": "Nano Banana", "gemini-nano-banana-2.1": "Nano Banana 2.1",
+                "gemini-3-pro-image": "Nano Banana Pro"}
+
+
+def options(gemini_models: List[str]) -> List[dict]:
+    """Every way this PC can make a picture right now, in the order 'Automatic' tries them (free first)."""
     s = settings()
-    ok = {"gemini": gem is not None, "hf": bool(token("hf")), "cf": bool(token("cf") and s["cf_account"]),
-          "pollinations": bool(s["pollinations"])}
-    if s["service"] in ok and s["service"] != "auto":
-        return [s["service"]] if ok[s["service"]] else []
-    return [k for k in ORDER if ok[k]]
+    out = [{"id": "hfspace", "label": "FLUX.1 schnell", "by": "Hugging Face Space", "free": True, "ready": True},
+           {"id": "cf", "label": "FLUX.1 schnell", "by": "Cloudflare Workers AI", "free": True,
+            "ready": bool(token("cf") and s["cf_account"]), "setup": "Add a Cloudflare token in Settings → Images"},
+           {"id": "pollinations", "label": "Pollinations", "by": "pollinations.ai", "free": True, "ready": bool(s["pollinations"]),
+            "setup": "Turn on Pollinations in Settings → Images"}]
+    for m in gemini_models:
+        if m in GEMINI_LABEL:
+            out.append({"id": "gemini:" + m, "label": GEMINI_LABEL[m], "by": "Google Gemini", "free": False, "ready": True,
+                        "cost": "Needs billing on the key"})
+    out.append({"id": "hf", "label": "Stable Diffusion 3", "by": "Hugging Face", "free": False, "ready": bool(token("hf")),
+                "cost": "Needs Hugging Face credits", "setup": "Add a Hugging Face token in Settings → Images"})
+    return out
+
+
+def auto_order(opts: List[dict]) -> List[str]:
+    return [o["id"] for o in opts if o["ready"]]
 
 
 def _raise(r: httpx.Response, name: str, secrets=()):
@@ -227,3 +244,50 @@ async def pollinations_generate(prompt: str, aspect: str = "") -> Tuple[bytes, s
     if r.status_code != 200:
         _raise(r, "Pollinations")
     return _image_bytes(r, "Pollinations")
+
+
+async def space_generate(prompt: str, aspect: str = "") -> Tuple[bytes, str]:
+    """FLUX.1-schnell on its free Hugging Face Space: POST /call/infer -> event id -> SSE stream -> file URL."""
+    t = token("hf")
+    hdr = {"Authorization": f"Bearer {t}"} if t else {}
+    w, h = SIZE.get(aspect, SIZE[""])
+    name = "Hugging Face (free Space)"
+    try:
+        r = await client().post(SPACE_URL + "/call/infer", json={"data": [prompt[:1500], 0, True, w, h, 4]}, headers=hdr, timeout=60)
+        if r.status_code != 200:
+            _raise(r, name, (t,))
+        eid = r.json().get("event_id")
+        ev, result, err = "", None, ""
+        async with client().stream("GET", f"{SPACE_URL}/call/infer/{eid}", headers=hdr, timeout=180) as st:
+            async for ln in st.aiter_lines():
+                if ln.startswith("event:"):
+                    ev = ln[6:].strip()
+                elif ln.startswith("data:"):
+                    data = ln[5:].strip()
+                    if ev == "complete":
+                        result = json.loads(data)
+                    elif ev == "error":
+                        err = data
+        if not result:
+            low = (err or "").lower()
+            if "quota" in low or "gpu" in low:
+                raise ProviderError("The free Hugging Face Space has used up today's free GPU time.", 429, "quota")
+            raise ProviderError("The free Hugging Face Space is busy. Try again in a minute.", 503, "busy")
+        url = (result[0] or {}).get("url") if isinstance(result, list) and result else None
+        if not url:
+            raise ProviderError(f"{name} answered without a picture.", 0, "server")
+        img = await client().get(url, headers=hdr, timeout=60)
+    except httpx.HTTPError as e:
+        raise network_error(e, name)
+    if img.status_code != 200:
+        _raise(img, name, (t,))
+    data, mime = _image_bytes(img, name)
+    if mime == "image/webp":  # save as PNG so Copy works everywhere
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.open(BytesIO(data)).save(buf, "PNG")
+        data, mime = buf.getvalue(), "image/png"
+    return data, mime

@@ -87,8 +87,9 @@ const kindInfo = k => S.kinds.find(x => x.kind === k) || {name: k};
 const curInfo = () => minfo(S.model);
 const provOf = pid => S.providers.find(p => p.id === pid);
 const isCloud = () => { const m = curInfo(); return !!m && !m.local; };
-const IMG_LABEL = {'images:hf': 'Hugging Face', 'images:cf': 'Cloudflare', 'images:pollinations': 'Pollinations'};
-const modelLabel = id => { if (IMG_LABEL[id]) return IMG_LABEL[id]; const m = minfo(id); return m ? m.label : (id || '').split(':').slice(1).join(':'); };
+const IMG_LABEL = {'images:hfspace': 'FLUX.1 schnell (Hugging Face)', 'images:hf': 'Stable Diffusion 3 (Hugging Face)', 'images:cf': 'FLUX.1 schnell (Cloudflare)', 'images:pollinations': 'Pollinations',
+  'gemini-3.1-flash-lite-image': 'Nano Banana 2 Lite', 'gemini-3.1-flash-image': 'Nano Banana 2', 'gemini-2.5-flash-image': 'Nano Banana', 'gemini-nano-banana-2.1': 'Nano Banana 2.1', 'gemini-3-pro-image': 'Nano Banana Pro'};
+const modelLabel = id => { if (IMG_LABEL[id]) return IMG_LABEL[id]; const tail = (id || '').split(':').slice(1).join(':'); if (IMG_LABEL[tail]) return IMG_LABEL[tail]; const m = minfo(id); return m ? m.label : (id || '').split(':').slice(1).join(':'); };
 
 /* ===================== models + picker ===================== */
 async function refreshModels(refresh = false){
@@ -683,20 +684,38 @@ function paintAssistant(el, m){
   } else if (tb.innerHTML) tb.innerHTML = '';
   const body = el.querySelector('.body');
   paintPics(el, body, mt.images || []);
+  paintRetry(el, m, live);
   body.classList.toggle('errtxt', !!mt.error);
   body.classList.toggle('live-caret', live && !!m.content);
   const text = display(m);
   if (!text && live){ if (!body.querySelector('.typing')){ body.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>'; body._b = null; } }
-  else { if (body.querySelector('.typing')) body.innerHTML = ''; paintMd(body, text || (live ? '' : '(no answer)'), mdOpts(m)); }
+  else { if (body.querySelector('.typing')) body.innerHTML = ''; paintMd(body, text || (live || (mt.images || []).length ? '' : '(no answer)'), mdOpts(m)); }
   const tools = el.querySelector('.tools');
   const sig = live ? 'live' : `${m.id}|${metaLine(m)}|${isLastAssistant(m)}`;
   if (tools._v !== sig){
     tools._v = sig;
-    tools.innerHTML = live ? '' : `<button class="chipbtn" data-act="copy">${ic('copy')}Copy</button>`
+    const pic = (mt.images || []).length && !m.content;
+    tools.innerHTML = live ? '' : (pic ? '' : `<button class="chipbtn" data-act="copy">${ic('copy')}Copy</button>`)
       + (isLastAssistant(m) ? `<button class="chipbtn" data-act="regen">${ic('regen')}Regenerate</button>` : '')
-      + `<button class="chipbtn" data-act="save">${ic('save')}Save</button><span class="meta">${esc(metaLine(m))}</span>`;
+      + (pic ? '' : `<button class="chipbtn" data-act="save">${ic('save')}Save</button>`) + `<span class="meta">${esc(metaLine(m))}</span>`;
   }
 }
+function paintRetry(el, m, live){
+  const ids = (!live && (m.meta || {}).retry) || [], sig = ids.join('|') + (S.imgOpts.length ? '+' : '');
+  let box = el.querySelector('.retry');
+  if (!ids.length){ if (box) box.remove(); return; }
+  if (box && box._v === sig) return;
+  if (!S.imgOpts.length){ loadImageModels().then(() => schedule(m)); }
+  if (!box){ box = document.createElement('div'); box.className = 'retry'; el.querySelector('.tools').before(box); }
+  box._v = sig;
+  const opts = ids.map(id => S.imgOpts.find(o => o.id === id)).filter(Boolean);
+  box.innerHTML = opts.length ? 'Try another model: ' + opts.map(o => `<button data-retry-img="${esc(o.id)}">${ic('image')}${esc(o.label)} <small>${esc(o.by)}${o.free ? ' · Free' : ''}</small></button>`).join('') : '';
+}
+$('#thread').addEventListener('click', e => {
+  const b = e.target.closest('[data-retry-img]'); if (!b) return;
+  const el = b.closest('[data-id]'), m = S.conv && S.conv.messages.find(x => x.id === el.dataset.id);
+  if (m) regenerate(m, {imageModel: b.dataset.retryImg});
+});
 const picURLs = new Map();
 async function picURL(name){
   if (!picURLs.has(name)) picURLs.set(name, api('/api/images/' + encodeURIComponent(name)).then(r => r.ok ? r.blob() : Promise.reject()).then(b => URL.createObjectURL(b)));
@@ -858,7 +877,7 @@ async function ask(prompt, label, system, opt = {}){
   const t0 = performance.now();
   let httpFailed = false;
   try{
-    await stream({model: S.model, image: img, think: thinking(), files: atts, messages: hist, system, whole: !!opt.whole, shield_ok: !!S.shieldOk[conv.id],
+    await stream({model: S.model, image: img, image_model: opt.imageModel || store.get('imageModel', 'auto'), think: thinking(), files: atts, messages: hist, system, whole: !!opt.whole, shield_ok: !!S.shieldOk[conv.id],
                   save: {conversation_id: conv.id, message_id: am.id}}, j => {
       if (j.confirm){ am.confirm = j.confirm; return; }
       if (j.docs){ am.meta.pages = j.docs.pages; am.meta.previews = j.docs.previews; }
@@ -868,6 +887,7 @@ async function ask(prompt, label, system, opt = {}){
       if (j.thinking) am.thinking += j.thinking;
       if (j.content) am.content += j.content;
       if (j.image) (am.meta.images = am.meta.images || []).push(j.image);
+      if (j.retry) am.meta.retry = j.retry;
       if (j.model) am.model = j.model;
       if (j.done){ if (j.speed) am.meta.speed = j.speed; if (j.usage) am.meta.usage = j.usage; }
       schedule(am);
@@ -910,7 +930,7 @@ async function refreshTitle(conv){
     const i = S.convs.findIndex(x => x.id === c.id); if (i >= 0) S.convs.splice(i, 1); S.convs.unshift(c); renderSide(); }catch{}
 }
 function stopCurrent(){ const l = S.conv && S.live.get(S.conv.id); if (l){ l.ctrl.abort(); setBusyUI(); } }
-async function regenerate(m){
+async function regenerate(m, opt = {}){
   if (liveHere() || !S.conv) return;
   const conv = S.conv, i = conv.messages.indexOf(m);
   const lastUser = [...conv.messages.slice(0, i)].reverse().find(x => x.role === 'user' && !(x.meta || {}).tool);
@@ -919,7 +939,7 @@ async function regenerate(m){
   conv.messages.splice(i);
   $(`#thread > [data-id="${CSS.escape(m.id)}"]`)?.remove();
   const mt = lastUser.meta || {};
-  ask(mt.prompt || lastUser.content, null, mt.system, {regen: true, image: !!(m.meta || {}).image});
+  ask(mt.prompt || lastUser.content, null, mt.system, {regen: true, image: !!(m.meta || {}).image, imageModel: opt.imageModel});
 }
 function startEdit(m){
   if (liveHere()) return;
@@ -1022,7 +1042,17 @@ async function submit(){
 }
 const IMAGE_ASK = /^\s*(please\s+)?(can you\s+|could you\s+)?(draw|paint|sketch|illustrate|(generate|create|make|design|render)\s+(me\s+)?(an?\s+|the\s+|some\s+)?(\w+\s+){0,3}(image|picture|pic|photo|drawing|illustration|logo|icon|wallpaper|poster|art(work)?))\b/i;
 const imageMode = () => $('#imgmode').getAttribute('aria-pressed') === 'true';
-$('#imgmode').onclick = () => { const on = !imageMode(); $('#imgmode').setAttribute('aria-pressed', String(on)); $('#input').placeholder = on ? 'Describe the picture to make' : 'Ask something, or drop a file here'; };
+S.imgOpts = [];
+const optName = o => `${o.label} · ${o.by}`;
+async function loadImageModels(){
+  try{ const r = await api('/api/image-models'); if (r.ok) S.imgOpts = (await r.json()).options; }catch{}
+  const cur = store.get('imageModel', 'auto'), sel = $('#imgmodel');
+  sel.innerHTML = '<option value="auto">Automatic (free first)</option>' + S.imgOpts.map(o =>
+    `<option value="${esc(o.id)}"${o.ready ? '' : ' disabled'} title="${esc(o.cost || '')}">${esc(optName(o))}${o.free ? ' · Free' : ''}${o.ready ? '' : ' (not set up)'}</option>`).join('');
+  sel.value = S.imgOpts.some(o => o.id === cur && o.ready) ? cur : 'auto';
+}
+$('#imgmodel').onchange = () => store.set('imageModel', $('#imgmodel').value);
+$('#imgmode').onclick = () => { const on = !imageMode(); $('#imgmode').setAttribute('aria-pressed', String(on)); $('#imgmodel').hidden = !on; if (on) loadImageModels(); $('#input').placeholder = on ? 'Describe the picture to make' : 'Ask something, or drop a file here'; };
 $('#think').setAttribute('aria-pressed', String(store.get('think', false)));
 $('#think').onclick = () => { const on = $('#think').getAttribute('aria-pressed') !== 'true'; $('#think').setAttribute('aria-pressed', String(on)); store.set('think', on); };
 
@@ -1257,16 +1287,15 @@ function localCard(p){
 /* ---- Settings -> Images ---- */
 async function loadImageServices(){
   const r = await api('/api/image-services'); if (!r.ok) return; const st = await r.json();
-  $('#imgpick').value = st.service; $('#img-poll').checked = !!st.pollinations; $('#img-cf-acct').value = st.cf_account || '';
+$('#img-poll').checked = !!st.pollinations; $('#img-cf-acct').value = st.cf_account || '';
   $('#img-gem').textContent = st.gemini ? 'Key added' : 'No key';
   for (const k of ['hf', 'cf']){ const s = st.services[k]; $('#img-' + k + '-st').textContent = s.saved ? 'Saved ' + s.hint : ''; $('#img-' + k).value = ''; $('#img-' + k).placeholder = s.saved ? 'Saved (' + s.hint + ')' : (k === 'hf' ? 'hf_...' : 'API token'); }
 }
 async function imageServices(body, msg){
   const r = await jpost('/api/image-services', body);
   if (!r.ok){ toast(await errorOf(r)); return; }
-  await loadImageServices(); if (msg) toast(msg);
+  await loadImageServices(); loadImageModels(); if (msg) toast(msg);
 }
-$('#imgpick').onchange = () => imageServices({service: $('#imgpick').value}, 'Saved');
 $('#img-poll').onchange = () => imageServices({pollinations: $('#img-poll').checked});
 $('#imgsvc').addEventListener('click', e => {
   const s = e.target.closest('[data-imgsave]'), d = e.target.closest('[data-imgdel]');

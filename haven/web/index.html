@@ -369,6 +369,11 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .tg:hover{border-color:var(--line-2);color:var(--ink)}
 .tg[aria-pressed="true"]{border-color:transparent;background:var(--t-ai-bg);color:var(--t-ai)}
 .tg:disabled{cursor:default;opacity:.8}
+.imgmodel{height:32px;max-width:340px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font:500 .8rem var(--font);padding:0 .6rem;cursor:pointer}
+.imgmodel:hover{border-color:var(--line-2);color:var(--ink)}
+.retry{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;margin-top:.5rem;font-size:.82rem;color:var(--ink-2)}
+.retry button{height:30px;padding:0 .7rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:500 .8rem var(--font);display:inline-flex;gap:.35rem;align-items:center}
+.retry button:hover{border-color:var(--brand);color:var(--brand-text)}.retry button small{color:var(--ink-3);font-weight:400}
 .irow{display:flex;gap:.4rem;margin-top:.5rem}.irow input{flex:1;min-width:0;height:32px;padding:0 .6rem;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.85rem}
 .tag{font-size:.68rem;font-weight:600;padding:.05rem .4rem;border-radius:999px;background:var(--sunken);color:var(--ink-2);vertical-align:.1em}.tag:empty{display:none}.tag.free{background:color-mix(in srgb,var(--ok,#1a7f4b) 15%,transparent);color:var(--ok,#1a7f4b)}
 .sel{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 .5rem;font:inherit;font-size:.85rem}
@@ -626,7 +631,8 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
             <div class="crow">
               <button class="ib" id="b-attach" title="Add files"></button>
               <button class="tg" id="think" aria-pressed="false" title="Think it through first (slower)"></button>
-              <button class="tg" id="imgmode" aria-pressed="false" title="Make a picture (Settings → Images)"></button>
+              <button class="tg" id="imgmode" aria-pressed="false" title="Make a picture"></button>
+              <select class="imgmodel" id="imgmodel" hidden aria-label="Image model" title="Which model makes the picture"></select>
               <button class="tg shield" id="shield" aria-pressed="true" hidden></button>
               <span class="sp"></span>
               <button class="send" id="send" title="Send (Enter)" disabled></button>
@@ -694,16 +700,11 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
     </section>
     <section class="tabp" data-p="images" hidden>
       <h3>Images</h3>
-      <p class="lead">Turn on <b>Image</b> in the chat box, or just ask "draw…", to make a picture. Haven tries these in order and moves on when one is out of free uses.</p>
+      <p class="lead">Turn on <b>Image</b> in the chat box, or just ask "draw…", to make a picture. Pick the model next to the Image button; <b>Automatic</b> uses the free ones first.</p>
       <div class="plist" id="imgsvc">
-        <div class="setrow"><div class="grow"><b>Use</b><p>Which service makes pictures.</p></div>
-          <select id="imgpick" class="sel" aria-label="Image service">
-            <option value="auto">Automatic (best available)</option><option value="gemini">Google Gemini</option>
-            <option value="hf">Hugging Face</option><option value="cf">Cloudflare Workers AI</option><option value="pollinations">Pollinations</option>
-          </select></div>
-        <div class="setrow"><div class="grow"><b>Google Gemini <span class="tag" id="img-gem"></span></b><p>Uses your Gemini key from Models &amp; keys. Images need billing turned on for the key (about $0.04 each).</p></div></div>
+        <div class="setrow"><div class="grow"><b>Google Gemini (Nano Banana) <span class="tag" id="img-gem"></span></b><p>Uses your Gemini key from Models &amp; keys. Google only makes images for keys with billing turned on (about $0.04 each).</p></div></div>
         <div class="setrow"><div class="grow"><b>Hugging Face <span class="tag" id="img-hf-st"></span></b>
-          <p>Stable Diffusion 3. Create a token with "Make calls to Inference Providers" at <a class="linkish" data-ext="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a> (a Hugging Face key under Models &amp; keys works too). Images need pre-paid credits or a PRO plan.</p>
+          <p><b>FLUX.1 schnell</b> on Hugging Face's free Space: free, with a daily allowance of shared GPU time (a token gives your account's allowance). <b>Stable Diffusion 3</b> through Inference Providers needs credits or PRO. Create a token with "Make calls to Inference Providers" at <a class="linkish" data-ext="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a>; a Hugging Face key under Models &amp; keys works too.</p>
           <div class="irow"><input type="password" id="img-hf" placeholder="hf_..." autocomplete="off" aria-label="Hugging Face token"><button class="btn small" data-imgsave="hf">Save</button><button class="btn small ghost" data-imgdel="hf">Remove</button></div></div></div>
         <div class="setrow"><div class="grow"><b>Cloudflare Workers AI <span class="tag free">Free</span> <span class="tag" id="img-cf-st"></span></b>
           <p>FLUX.1-schnell with a daily free allowance. In the Cloudflare dashboard open <a class="linkish" data-ext="https://dash.cloudflare.com/?to=/:account/ai/workers-ai">AI → Workers AI</a>, copy your Account ID and create a "Workers AI" API token.</p>

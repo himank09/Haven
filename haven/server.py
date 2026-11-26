@@ -527,6 +527,11 @@ def image_file(name: str):
     return FileResponse(p, headers={"Cache-Control": "private, max-age=86400"})
 
 
+@app.get("/api/image-models")
+async def image_models_list():
+    return {"options": await chat.image_options()}
+
+
 @app.get("/api/image-services")
 def image_services():
     from haven import images
@@ -537,10 +542,6 @@ def image_services():
 def image_services_set(payload: dict):
     from haven import images
     cur = dict(keystore.get_setting("images") or {})
-    if "service" in payload:
-        if payload["service"] not in ("auto", *images.ORDER):
-            raise HTTPException(400, "Unknown image service")
-        cur["service"] = payload["service"]
     if "pollinations" in payload:
         cur["pollinations"] = bool(payload["pollinations"])
     if "cf_account" in payload:

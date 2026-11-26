@@ -75,7 +75,7 @@ class Hub:
 
     def reset(self):
         self.providers = {k: FakeProvider(k) for k in KINDS}
-        self.img_status = {"hf": 200, "cf": 200, "poll": 200}  # free image services (Hugging Face, Cloudflare, Pollinations)
+        self.img_status = {"hf": 200, "cf": 200, "poll": 200, "space": 200}  # free image services (Hugging Face, Cloudflare, Pollinations)
         self.img_requests = []
 
     def __getitem__(self, kind) -> FakeProvider:
@@ -157,6 +157,20 @@ class Hub:
         self.img_requests.append({"svc": svc, "path": request.url.path, "query": dict(request.query_params),
                                   "headers": dict(request.headers), "json": json.loads(raw) if raw else None})
         st = self.img_status.get(svc, 404)
+        if svc == "space":  # Gradio API of the free FLUX Space: POST call -> event id -> SSE -> file URL
+            path = request.url.path
+            if path.endswith("/file.png"):
+                return Response(FAKE_PNG, 200, media_type="image/png")
+            if request.method == "POST":
+                return JSONResponse({"event_id": "ev1"}) if st == 200 else JSONResponse({"error": "down"}, st)
+            if st == 429:
+                body = 'event: error\ndata: "You have exceeded your free GPU quota"\n\n'
+            elif st != 200:
+                body = "event: error\ndata: null\n\n"
+            else:
+                url = f"http://127.0.0.1:{self.port}/img/space/file.png"
+                body = 'event: heartbeat\ndata: null\n\nevent: complete\ndata: [{"url": "' + url + '"}]\n\n'
+            return Response(body, 200, media_type="text/event-stream")
         if st != 200:
             return JSONResponse({"error": f"fake {svc} {st}"}, st)
         if svc == "cf":

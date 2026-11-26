@@ -101,6 +101,7 @@ def clean_state(request):
     from haven import images  # free image services -> the fake hub (tests never reach the real sites)
     base = f"http://127.0.0.1:{HUB.port}/img"
     images.HF_URL, images.CF_URL, images.POLL_URL = base + "/hf/flux", base + "/cf/{acct}/flux", base + "/poll/{prompt}"
+    images.SPACE_URL = base + "/space/gradio_api"
     yield
 
 
