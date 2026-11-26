@@ -195,18 +195,27 @@
     return h;
   }
 
-  // (p. 12)  (pp. 3–5)  (p. 4, 7)  -> chips, only for pages that exist
+  // (p. 12)  (pp. 3–5)  (p. 4, 7)  -> one small group of page chips, only for pages that exist.
+  // Citations right next to each other ("(p. 3) (p. 6)") merge into one group, and repeats are dropped.
   function cites(h, o) {
-    return h.replace(/\((pp?)\.\s?(\d{1,5}(?:\s?[–-]\s?\d{1,5})?(?:\s?,\s?\d{1,5}(?:\s?[–-]\s?\d{1,5})?)*)\)/g, (all, _p, list) => {
-      const parts = list.split(/\s?,\s?/);
-      const chips = [];
-      for (const part of parts) {
+    h = h.replace(/\((pp?)\.\s?(\d{1,5}(?:\s?[–-]\s?\d{1,5})?(?:\s?,\s?\d{1,5}(?:\s?[–-]\s?\d{1,5})?)*)\)/g, (all, _p, list) => {
+      const out = [];
+      for (const part of list.split(/\s?,\s?/)) {
         const r = part.split(/\s?[–-]\s?/).map(Number);
         const a = r[0], b = r[1] || r[0];
         if (!(a >= 1 && b >= a && b <= o.pages)) return all; // any page out of range: leave the whole thing as text
-        chips.push(`<button type="button" class="cite" data-p="${a}">${a === b ? 'p. ' + a : 'pp. ' + a + '–' + b}</button>`);
+        out.push(a + '-' + b);
       }
-      return chips.join('');
+      return '\u0001' + out.join(',') + '\u0002';
+    });
+    return h.replace(/\s*\u0001([\d,-]+)\u0002(?:[\s,;]*\u0001[\d,-]+\u0002)*/g, run => {
+      const seen = new Set(), chips = [];
+      for (const m of run.matchAll(/\u0001([\d,-]+)\u0002/g)) for (const ab of m[1].split(',')) {
+        if (seen.has(ab)) continue; seen.add(ab);
+        const [a, b] = ab.split('-').map(Number), label = a === b ? String(a) : a + '–' + b;
+        chips.push(`<button type="button" class="cite" data-p="${a}" aria-label="${a === b ? 'Page ' + a : 'Pages ' + label}">${label}</button>`);
+      }
+      return `<span class="cites" title="Pages in your document">${chips.join('')}</span>`;
     });
   }
 

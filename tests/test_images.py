@@ -40,9 +40,75 @@ def test_detect(text, yes):
     assert images.looks_like_image_request(text) is yes
 
 
-def test_needs_gemini(live):
+def services(live, **body):
+    r = httpx.post(live.base + "/api/image-services", json=body, headers=H)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def errors(ev):
+    return "".join(e.get("error", "") for e in ev)
+
+
+def notes(ev):
+    return " ".join(e.get("note", "") for e in ev)
+
+
+def test_no_service_set_up(live, hub):
+    services(live, pollinations=False)
     ev = make(live)
-    assert "Gemini key" in "".join(e.get("error", "") for e in ev)
+    assert "Settings" in errors(ev) and "Images" in errors(ev)
+    assert hub.img_requests == []
+
+
+def test_pollinations_needs_no_account(live, hub):
+    ev = make(live, "draw a red fox in the snow")
+    assert [e for e in ev if "image" in e] and not errors(ev)
+    assert ev[-1]["model"] == "images:pollinations" and "Pollinations" in notes(ev)
+    assert [r["svc"] for r in hub.img_requests] == ["poll"]
+    assert "red%20fox" in hub.img_requests[0]["path"] or "red fox" in hub.img_requests[0]["path"]
+
+
+def test_hugging_face_token_used_first(live, hub, test_home):
+    st = services(live, hf_token="hf_FAKEtoken1234567890")
+    assert st["services"]["hf"]["saved"] and st["services"]["hf"]["hint"].endswith("7890")
+    assert "hf_FAKEtoken1234567890" not in json.dumps(st)
+    ev = make(live)
+    assert ev[-1]["model"] == "images:hf"
+    req = hub.img_requests[-1]
+    assert req["svc"] == "hf" and req["headers"]["authorization"] == "Bearer hf_FAKEtoken1234567890"
+    assert req["json"]["inputs"] == "draw a red fox"
+    assert "hf_FAKEtoken1234567890" not in (test_home / "Haven" / "settings.json").read_text(encoding="utf-8")
+    assert "hf_FAKEtoken1234567890" not in json.dumps(ev)
+
+
+def test_cloudflare(live, hub):
+    assert httpx.post(live.base + "/api/image-services", json={"cf_account": "not-an-id"}, headers=H).status_code == 400
+    services(live, cf_account="0123456789abcdef0123456789abcdef", cf_token="cfFAKEtoken000999", service="cf")
+    ev = make(live)
+    assert ev[-1]["model"] == "images:cf" and [e for e in ev if "image" in e]
+    assert "/0123456789abcdef0123456789abcdef/" in hub.img_requests[-1]["path"]
+    assert hub.img_requests[-1]["json"]["prompt"] == "draw a red fox"
+
+
+def test_falls_back_when_allowance_is_used_up(live, hub):
+    services(live, hf_token="hf_FAKEtoken1234567890")
+    hub.img_status["hf"] = 402  # no credits
+    ev = make(live)
+    assert "Hugging Face" in notes(ev) and "Trying Pollinations" in notes(ev)
+    assert ev[-1]["model"] == "images:pollinations" and not errors(ev)
+
+
+def test_all_services_fail(live, hub):
+    hub.img_status["poll"] = 503
+    ev = make(live)
+    assert errors(ev) and not [e for e in ev if "image" in e]
+
+
+def test_pinned_service_is_the_only_one(live, hub):
+    services(live, service="hf")
+    ev = make(live)  # Hugging Face picked but no token saved: nothing usable, no silent fallback
+    assert "Settings" in errors(ev) and hub.img_requests == []
 
 
 def test_makes_and_serves_image(live, hub):
@@ -67,14 +133,21 @@ def test_shield_masks_prompt(live, hub):
     make(live, "draw a poster with my email jane.doe@example.com on it")
     sent = json.dumps([r for r in hub["gemini"].requests if r["kind"] == "image"][-1]["json"])
     assert "jane.doe@example.com" not in sent
+    services(live, service="pollinations")
+    make(live, "draw a poster with my email jane.doe@example.com on it")
+    assert "jane.doe" not in json.dumps(hub.img_requests[-1])
 
 
 def test_quota_error_is_clear(live, hub):
     hub["gemini"].models = IMG_MODELS
     hub["gemini"].chat_status = 429
     add_gemini(live)
-    err = "".join(e.get("error", "") for e in make(live))
+    services(live, pollinations=False)
+    err = errors(make(live))
     assert "billing" in err and K.GEMINI not in err
+    services(live, pollinations=True)  # free fallback after Gemini says no
+    ev = make(live)
+    assert "billing" in notes(ev) and ev[-1]["model"] == "images:pollinations"
 
 
 def test_saved_with_images(live, hub):

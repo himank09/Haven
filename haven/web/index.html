@@ -273,7 +273,10 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 @keyframes blink{50%{opacity:0}}
 
 /* markdown */
-.md{line-height:1.6}
+.md{line-height:1.65}
+.a .md{color:var(--ink)}
+.md li::marker{color:var(--ink-3)}
+.md li+li{margin-top:.35rem}
 .md p{margin:.45rem 0}
 .md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:1rem 0 .4rem;line-height:1.25;letter-spacing:-.01em}
 .md h1{font-size:1.4rem}.md h2{font-size:1.22rem}.md h3{font-size:1.08rem}.md h4,.md h5,.md h6{font-size:1rem}
@@ -302,7 +305,9 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .katex .katex-mathml{position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;width:1px;height:1px}
 .md .longrun{display:block;max-width:100%;overflow-x:auto;white-space:nowrap;font:.82rem var(--mono);background:var(--sunken);border-radius:8px;padding:.4rem .6rem;margin:.3rem 0}
 .md .longmore{display:block;font-size:.8rem;color:var(--ink-3)}
-.cite{display:inline-flex;align-items:center;height:20px;padding:0 .45rem;margin:0 .12rem;border-radius:6px;border:1px solid color-mix(in srgb,var(--brand) 35%,transparent);background:var(--brand-soft);color:var(--brand-text);font:600 .74rem var(--font);vertical-align:.08em;cursor:help}
+.cites{display:inline-flex;gap:2px;margin-left:.22rem;vertical-align:.3em;white-space:nowrap}
+.cite{display:inline-grid;place-items:center;min-width:1.25rem;height:1.05rem;padding:0 .3rem;border:0;border-radius:5px;background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand-text);font:600 .66rem/1 var(--font);font-variant-numeric:tabular-nums;cursor:help;transition:background .15s}
+.cite:hover,.cite:focus-visible{background:color-mix(in srgb,var(--brand) 26%,transparent)}
 .citetip{position:fixed;z-index:80;max-width:360px;padding:.6rem .75rem;border-radius:10px;background:var(--raised);border:1px solid var(--line);box-shadow:var(--sh-3);font-size:.82rem;color:var(--ink-2);white-space:pre-wrap;pointer-events:none}
 .citetip b{display:block;color:var(--ink);margin-bottom:.2rem}
 
@@ -327,7 +332,8 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 
 /* ================= dock ================= */
 .dock{position:sticky;bottom:0;padding:.5rem 0 1rem;z-index:3}
-.stage:not(.empty) .dock{background:linear-gradient(to top,var(--bg) 72%,transparent)}
+.stage:not(.empty) .dock{background:var(--bg)}
+.stage:not(.empty) .dock::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:28px;pointer-events:none;background:linear-gradient(to top,var(--bg),transparent)}
 .ctx{display:grid;gap:.5rem;margin-bottom:.55rem}
 .files{display:flex;gap:.45rem;flex-wrap:wrap}
 .fchip{display:inline-flex;align-items:center;gap:.5rem;height:40px;padding:0 .35rem 0 .45rem;border-radius:12px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh-1);max-width:290px;animation:chipIn .3s var(--ease) both}
@@ -363,6 +369,9 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .tg:hover{border-color:var(--line-2);color:var(--ink)}
 .tg[aria-pressed="true"]{border-color:transparent;background:var(--t-ai-bg);color:var(--t-ai)}
 .tg:disabled{cursor:default;opacity:.8}
+.irow{display:flex;gap:.4rem;margin-top:.5rem}.irow input{flex:1;min-width:0;height:32px;padding:0 .6rem;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.85rem}
+.tag{font-size:.68rem;font-weight:600;padding:.05rem .4rem;border-radius:999px;background:var(--sunken);color:var(--ink-2);vertical-align:.1em}.tag:empty{display:none}.tag.free{background:color-mix(in srgb,var(--ok,#1a7f4b) 15%,transparent);color:var(--ok,#1a7f4b)}
+.sel{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 .5rem;font:inherit;font-size:.85rem}
 .pics{display:flex;flex-wrap:wrap;gap:.6rem;margin:.2rem 0 .6rem}.pic{margin:0;max-width:min(100%,520px)}.pic img{display:block;max-width:100%;border-radius:12px;border:1px solid var(--line);background:var(--line)}.pic figcaption{display:flex;gap:.3rem;margin-top:.35rem}
 .tg svg{width:15px;height:15px}
 .tg.shield[aria-pressed="true"]{border-color:transparent;background:var(--t-conv-bg);color:var(--t-conv)}
@@ -617,7 +626,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
             <div class="crow">
               <button class="ib" id="b-attach" title="Add files"></button>
               <button class="tg" id="think" aria-pressed="false" title="Think it through first (slower)"></button>
-              <button class="tg" id="imgmode" aria-pressed="false" title="Make a picture with Google Gemini"></button>
+              <button class="tg" id="imgmode" aria-pressed="false" title="Make a picture (Settings → Images)"></button>
               <button class="tg shield" id="shield" aria-pressed="true" hidden></button>
               <span class="sp"></span>
               <button class="send" id="send" title="Send (Enter)" disabled></button>
@@ -646,6 +655,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
     <h2 id="dlgtitle">Settings</h2>
     <button class="tab" data-tab="profile"><span id="ic-prof"></span>Profile</button>
     <button class="tab on" data-tab="models"><span id="ic-keys"></span>Models &amp; keys</button>
+    <button class="tab" data-tab="images"><span id="ic-images"></span>Images</button>
     <button class="tab" data-tab="privacy"><span id="ic-shield"></span>Privacy</button>
     <button class="tab" data-tab="addons"><span id="ic-ext"></span>Add-ons</button>
     <button class="tab" data-tab="about"><span id="ic-about"></span>About</button>
@@ -681,6 +691,27 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
         <p class="small" id="keymsg" style="margin-top:.4rem"></p>
       </details>
       <p class="small lockline" id="storagenote"></p>
+    </section>
+    <section class="tabp" data-p="images" hidden>
+      <h3>Images</h3>
+      <p class="lead">Turn on <b>Image</b> in the chat box, or just ask "draw…", to make a picture. Haven tries these in order and moves on when one is out of free uses.</p>
+      <div class="plist" id="imgsvc">
+        <div class="setrow"><div class="grow"><b>Use</b><p>Which service makes pictures.</p></div>
+          <select id="imgpick" class="sel" aria-label="Image service">
+            <option value="auto">Automatic (best available)</option><option value="gemini">Google Gemini</option>
+            <option value="hf">Hugging Face</option><option value="cf">Cloudflare Workers AI</option><option value="pollinations">Pollinations</option>
+          </select></div>
+        <div class="setrow"><div class="grow"><b>Google Gemini <span class="tag" id="img-gem"></span></b><p>Uses your Gemini key from Models &amp; keys. Images need billing turned on for the key (about $0.04 each).</p></div></div>
+        <div class="setrow"><div class="grow"><b>Hugging Face <span class="tag" id="img-hf-st"></span></b>
+          <p>Stable Diffusion 3. Create a token with "Make calls to Inference Providers" at <a class="linkish" data-ext="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a> (a Hugging Face key under Models &amp; keys works too). Images need pre-paid credits or a PRO plan.</p>
+          <div class="irow"><input type="password" id="img-hf" placeholder="hf_..." autocomplete="off" aria-label="Hugging Face token"><button class="btn small" data-imgsave="hf">Save</button><button class="btn small ghost" data-imgdel="hf">Remove</button></div></div></div>
+        <div class="setrow"><div class="grow"><b>Cloudflare Workers AI <span class="tag free">Free</span> <span class="tag" id="img-cf-st"></span></b>
+          <p>FLUX.1-schnell with a daily free allowance. In the Cloudflare dashboard open <a class="linkish" data-ext="https://dash.cloudflare.com/?to=/:account/ai/workers-ai">AI → Workers AI</a>, copy your Account ID and create a "Workers AI" API token.</p>
+          <div class="irow"><input id="img-cf-acct" placeholder="Account ID (32 characters)" autocomplete="off" aria-label="Cloudflare account ID"></div>
+          <div class="irow"><input type="password" id="img-cf" placeholder="API token" autocomplete="off" aria-label="Cloudflare API token"><button class="btn small" data-imgsave="cf">Save</button><button class="btn small ghost" data-imgdel="cf">Remove</button></div></div></div>
+        <div class="setrow"><div class="grow"><b>Pollinations <span class="tag free">Free</span></b><p>No account or key at all. Your description goes to pollinations.ai, a small free service with no privacy promises, so the Privacy Shield still hides personal details first.</p></div>
+          <label class="switch" title="Pollinations"><input type="checkbox" id="img-poll" aria-label="Allow Pollinations"><span></span></label></div>
+      </div>
     </section>
     <section class="tabp" data-p="privacy" hidden>
       <h3>Privacy</h3>

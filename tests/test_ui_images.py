@@ -65,3 +65,23 @@ def test_cancel_gives_text_answer(pg, live, hub):
     wait_done(pg)
     assert len([r for r in hub["gemini"].requests if r["kind"] == "image"]) == before
     assert pg.locator("#thread > .a:last-child .pics").count() == 0
+
+
+def test_settings_images_tab(pg, live, hub):
+    open_app(pg, live)
+    pg.click("#me-gear") if pg.locator("#me-gear").is_visible() else pg.keyboard.press("Control+Comma")
+    pg.click(".tab[data-tab=images]")
+    pg.wait_for_selector("#imgsvc", state="visible")
+    assert pg.input_value("#imgpick") == "auto" and pg.is_checked("#img-poll")
+    pg.fill("#img-hf", "hf_FAKEtoken1234567890")
+    pg.click("[data-imgsave=hf]")
+    pg.wait_for_function("() => document.querySelector('#img-hf-st').textContent.includes('7890')")
+    assert pg.input_value("#img-hf") == ""  # the token is never shown again
+    pg.select_option("#imgpick", "hf")
+    pg.wait_for_function("() => true")
+    import httpx
+    from tests.ui import H
+    st = httpx.get(live.base + "/api/image-services", headers=H).json()
+    assert st["service"] == "hf" and st["services"]["hf"]["saved"]
+    if SHOTS:
+        pg.screenshot(path=SHOTS.replace(".png", "_settings.png"))

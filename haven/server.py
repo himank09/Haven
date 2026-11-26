@@ -11,6 +11,7 @@ import glob
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -524,6 +525,34 @@ def image_file(name: str):
     if not p:
         raise HTTPException(404, "Image not found")
     return FileResponse(p, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/api/image-services")
+def image_services():
+    from haven import images
+    return {**images.status(), "gemini": gemini_entry() is not None}
+
+
+@app.post("/api/image-services")
+def image_services_set(payload: dict):
+    from haven import images
+    cur = dict(keystore.get_setting("images") or {})
+    if "service" in payload:
+        if payload["service"] not in ("auto", *images.ORDER):
+            raise HTTPException(400, "Unknown image service")
+        cur["service"] = payload["service"]
+    if "pollinations" in payload:
+        cur["pollinations"] = bool(payload["pollinations"])
+    if "cf_account" in payload:
+        acct = str(payload["cf_account"] or "").strip().lower()
+        if acct and not re.fullmatch(r"[0-9a-f]{32}", acct):
+            raise HTTPException(400, "A Cloudflare account ID is 32 letters and digits (find it on the Workers AI page).")
+        cur["cf_account"] = acct
+    keystore.set_setting("images", cur)
+    for svc in ("hf", "cf"):
+        if svc + "_token" in payload:
+            images.set_token(svc, str(payload[svc + "_token"] or "").strip())
+    return images.status()
 
 
 @app.post("/api/unload")

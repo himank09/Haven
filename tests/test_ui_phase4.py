@@ -45,9 +45,9 @@ def test_citation_chips_and_hover(pg, live, hub, tmp_path):
     send(pg, "When is the oil change?")
     wait_done(pg)
     chips = pg.locator("#thread .a .body .cite").all_inner_texts()
-    assert chips == ["p. 12", "pp. 3–5", "p. 4", "p. 7"]
+    assert chips == ["12", "3–5", "4", "7"]
     assert "(p. 999)" in pg.inner_text("#thread .a .body")  # beyond the page count: plain text
-    pg.hover("#thread .cite:has-text('p. 12')")
+    pg.hover("#thread .cite[data-p='12']")
     pg.wait_for_selector(".citetip")
     tip = pg.inner_text(".citetip")
     assert tip.startswith("Page 12") and "Section 12: maintenance schedule" in tip

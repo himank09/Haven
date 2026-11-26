@@ -75,6 +75,8 @@ class Hub:
 
     def reset(self):
         self.providers = {k: FakeProvider(k) for k in KINDS}
+        self.img_status = {"hf": 200, "cf": 200, "poll": 200}  # free image services (Hugging Face, Cloudflare, Pollinations)
+        self.img_requests = []
 
     def __getitem__(self, kind) -> FakeProvider:
         return self.providers[kind]
@@ -89,6 +91,8 @@ class Hub:
     async def handle(self, request: Request):
         path = "/" + request.path_params["path"]
         kind = path.split("/")[1]
+        if kind == "img":
+            return await self._image_service(request, path.split("/")[2])
         p = self.providers.get(kind)
         if not p:
             return JSONResponse({"error": "no such fake"}, 404)
@@ -147,6 +151,17 @@ class Hub:
             chunks = p.chunk_fn(body or {}) if p.chunk_fn else list(p.chunks)
             return StreamingResponse(self._gen(p, chunks), media_type="text/event-stream")
         return JSONResponse({"error": "unknown fake path " + rest}, 404)
+
+    async def _image_service(self, request: Request, svc: str):
+        raw = await request.body()
+        self.img_requests.append({"svc": svc, "path": request.url.path, "query": dict(request.query_params),
+                                  "headers": dict(request.headers), "json": json.loads(raw) if raw else None})
+        st = self.img_status.get(svc, 404)
+        if st != 200:
+            return JSONResponse({"error": f"fake {svc} {st}"}, st)
+        if svc == "cf":
+            return JSONResponse({"success": True, "result": {"image": base64.b64encode(FAKE_PNG).decode()}})
+        return Response(FAKE_PNG, 200, media_type="image/png")
 
     async def _gen(self, p: FakeProvider, chunks):
         done = False

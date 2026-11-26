@@ -71,6 +71,7 @@ $('#mark').innerHTML = archW(16); $('#heroarch').innerHTML = archW(32); $('#drop
  ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield'],['#ic-about','info'],['#r-open','side'],['#r-new','edit'],['#r-search','search'],['#r-recent','chats'],['#ic-prof','user'],['#me-gear','gear']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
 $('#think').innerHTML = ic('bulb') + 'Think';
 $('#imgmode').innerHTML = ic('image') + 'Image';
+$('#ic-images').innerHTML = ic('image');
 $('#send').innerHTML = ic('up');
 
 /* ===================== state ===================== */
@@ -86,7 +87,8 @@ const kindInfo = k => S.kinds.find(x => x.kind === k) || {name: k};
 const curInfo = () => minfo(S.model);
 const provOf = pid => S.providers.find(p => p.id === pid);
 const isCloud = () => { const m = curInfo(); return !!m && !m.local; };
-const modelLabel = id => { const m = minfo(id); return m ? m.label : (id || '').split(':').slice(1).join(':'); };
+const IMG_LABEL = {'images:hf': 'Hugging Face', 'images:cf': 'Cloudflare', 'images:pollinations': 'Pollinations'};
+const modelLabel = id => { if (IMG_LABEL[id]) return IMG_LABEL[id]; const m = minfo(id); return m ? m.label : (id || '').split(':').slice(1).join(':'); };
 
 /* ===================== models + picker ===================== */
 async function refreshModels(refresh = false){
@@ -779,6 +781,8 @@ function repaint(m){
   else { const n = msgEl(m); el.replaceWith(n); markLast(); }
   if (S.stick) scrollEl.scrollTop = scrollEl.scrollHeight;
 }
+// keep the newest message in view when the dock grows (attached file chips) or the last answer gains its buttons
+const stickRO = new ResizeObserver(() => { if (S.stick) scrollEl.scrollTop = scrollEl.scrollHeight; }); ['#dock', '#thread'].forEach(s => stickRO.observe($(s)));
 const dirty = new Set(); let raf = 0;
 function schedule(m){ dirty.add(m); if (!raf) raf = requestAnimationFrame(() => { raf = 0; const d = [...dirty]; dirty.clear(); d.forEach(repaint); }); }
 
@@ -1013,7 +1017,7 @@ async function submit(){
     }
   }
   let image = imageMode();
-  if (!image && IMAGE_ASK.test(t) && !files.length) image = confirm('This looks like a request for a picture. Make an image with Google Gemini?\n\nOK = make an image · Cancel = answer in text');
+  if (!image && IMAGE_ASK.test(t) && !files.length) image = confirm('This looks like a request for a picture. Make an image?\n\nOK = make an image · Cancel = answer in text');
   ask(t, null, undefined, {image});
 }
 const IMAGE_ASK = /^\s*(please\s+)?(can you\s+|could you\s+)?(draw|paint|sketch|illustrate|(generate|create|make|design|render)\s+(me\s+)?(an?\s+|the\s+|some\s+)?(\w+\s+){0,3}(image|picture|pic|photo|drawing|illustration|logo|icon|wallpaper|poster|art(work)?))\b/i;
@@ -1250,7 +1254,30 @@ function localCard(p){
     + `<div class="pdesc">${ok ? `${p.model_count} model${p.model_count === 1 ? '' : 's'} on this PC` : esc(info.desc || '')}</div></div>`
     + `<div class="pact">${ok ? '' : `<button class="btn small ghost" data-retry="1">Check again</button><button class="btn small" data-ext="${esc(info.url || '')}">${esc(info.url_label || 'Download')}</button>`}</div></div></div>`;
 }
+/* ---- Settings -> Images ---- */
+async function loadImageServices(){
+  const r = await api('/api/image-services'); if (!r.ok) return; const st = await r.json();
+  $('#imgpick').value = st.service; $('#img-poll').checked = !!st.pollinations; $('#img-cf-acct').value = st.cf_account || '';
+  $('#img-gem').textContent = st.gemini ? 'Key added' : 'No key';
+  for (const k of ['hf', 'cf']){ const s = st.services[k]; $('#img-' + k + '-st').textContent = s.saved ? 'Saved ' + s.hint : ''; $('#img-' + k).value = ''; $('#img-' + k).placeholder = s.saved ? 'Saved (' + s.hint + ')' : (k === 'hf' ? 'hf_...' : 'API token'); }
+}
+async function imageServices(body, msg){
+  const r = await jpost('/api/image-services', body);
+  if (!r.ok){ toast(await errorOf(r)); return; }
+  await loadImageServices(); if (msg) toast(msg);
+}
+$('#imgpick').onchange = () => imageServices({service: $('#imgpick').value}, 'Saved');
+$('#img-poll').onchange = () => imageServices({pollinations: $('#img-poll').checked});
+$('#imgsvc').addEventListener('click', e => {
+  const s = e.target.closest('[data-imgsave]'), d = e.target.closest('[data-imgdel]');
+  if (s){ const k = s.dataset.imgsave, v = $('#img-' + k).value.trim(), body = {};
+    if (k === 'cf') body.cf_account = $('#img-cf-acct').value.trim();
+    if (v) body[k + '_token'] = v; else if (k !== 'cf'){ toast('Paste the token first'); return; }
+    imageServices(body, 'Saved'); }
+  if (d) imageServices({[d.dataset.imgdel + '_token']: ''}, 'Removed');
+});
 async function loadSettings(){
+  loadImageServices();
   try{ SET = await jget('/api/providers'); }catch{ return; }
   if (!S.kinds.length) await refreshModels();
   $('#provlocal').innerHTML = SET.providers.filter(p => p.local).map(localCard).join('');

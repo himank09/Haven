@@ -335,13 +335,19 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
 
 
 async def image_stream(payload: dict) -> AsyncIterator[str]:
-    """Make a picture with a Gemini image model. Same NDJSON contract plus {"image": "<file name>"}."""
+    """Make a picture. Same NDJSON contract plus {"image": "<file name>"}.
+
+    Services are tried in order (Settings -> Images): Gemini, Hugging Face, Cloudflare, Pollinations. When one is out of
+    free allowance (or refuses), the next one is tried and a note says so."""
     from haven import images
 
     prompt = next((m.get("content", "") for m in reversed(payload.get("messages") or []) if m.get("role") == "user"), "").strip()
     gem = next((c for _e, c in registry.configured() if c.kind == "gemini"), None)
+    order = images.chain(gem)
     saver = Saver(payload.get("save"), "")
     finished = False
+    aspect = str(payload.get("aspect") or "")
+    secrets = [t for t in (images.token("hf"), images.token("cf"), gem.key if gem else "") if t]
 
     def out(ev: dict) -> str:
         saver.add(ev)
@@ -350,38 +356,57 @@ async def image_stream(payload: dict) -> AsyncIterator[str]:
         return json.dumps(ev, ensure_ascii=False) + "\n"
 
     try:
-        if not gem:
-            yield out({"error": "Making images needs a Google Gemini key. Add one in Settings → Providers."})
-        elif not prompt:
+        if not prompt:
             yield out({"error": "Describe the picture you want."})
+        elif not order:
+            yield out({"error": "No image service is set up. Open Settings → Images: Pollinations works with no account, "
+                                "or add a free Hugging Face or Cloudflare token."})
         else:
             saver.write(final=False)
             sent = prompt
             if shield_enabled():
                 sh = Shield()
                 sent = sh.mask(prompt)
-                summary = sh.summary(gem.name)
+                summary = sh.summary("the image service")
                 if summary:
                     yield out({"note": summary})
-            try:
-                names = await images.image_models(gem)
-                if not names:
-                    raise ProviderError("This Gemini key can't see any image models.", 404, "not_found")
-                model = payload.get("image_model") if payload.get("image_model") in names else names[0]
-                saver.model = f"{gem.id}:{model}"
-                pics, text = await images.generate(gem, model, sent, str(payload.get("aspect") or ""))
-                if not pics:
-                    raise ProviderError("Gemini answered without a picture. Try describing it differently.", 0, "server")
-                for data, mime in pics:
-                    yield out({"image": await asyncio.to_thread(images.save, data, mime)})
-                if text:
-                    yield out({"content": text})
-                yield out({"note": f"Made with {model}. Google adds an invisible SynthID watermark."})
-            except ProviderError as e:
-                yield out({"error": redact(e.message, gem.secrets())})
-            except Exception as e:
-                log_error(traceback.format_exc(), gem.secrets())
-                yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+            last = None
+            for svc in order:
+                name = images.SERVICES[svc]
+                try:
+                    if svc == "gemini":
+                        names = await images.image_models(gem)
+                        if not names:
+                            raise ProviderError("This Gemini key can't see any image models.", 404, "not_found")
+                        model = payload.get("image_model") if payload.get("image_model") in names else names[0]
+                        pics, text = await images.generate(gem, model, sent, aspect)
+                        if not pics:
+                            raise ProviderError("Gemini answered without a picture.", 0, "server")
+                        label = model
+                    else:
+                        fn = {"hf": images.hf_generate, "cf": images.cf_generate, "pollinations": images.pollinations_generate}[svc]
+                        pics, text = [await fn(sent, aspect)], ""
+                        label = {"hf": "Stable Diffusion 3 on Hugging Face", "cf": "FLUX.1-schnell on Cloudflare",
+                                 "pollinations": "Pollinations"}[svc]
+                    saver.model = f"{gem.id}:{model}" if svc == "gemini" else f"images:{svc}"
+                    for data, mime in pics:
+                        yield out({"image": await asyncio.to_thread(images.save, data, mime)})
+                    if text:
+                        yield out({"content": text})
+                    yield out({"note": f"Made with {label}."})
+                    last = None
+                    break
+                except ProviderError as e:
+                    last = redact(e.message, secrets)
+                    if svc != order[-1]:
+                        yield out({"note": f"{name}: {last} Trying {images.SERVICES[order[order.index(svc) + 1]]}…"})
+                except (asyncio.CancelledError, GeneratorExit):
+                    raise
+                except Exception as e:
+                    log_error(traceback.format_exc(), secrets)
+                    last = f"Something went wrong with {name} ({type(e).__name__}). Details are in errors.log."
+            if last:
+                yield out({"error": last})
         saver.write(final=True)
         finished = True
         yield json.dumps({"done": True, "model": saver.model}) + "\n"
