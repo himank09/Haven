@@ -93,7 +93,7 @@ async function refreshModels(refresh = false){
     S.models = j.models; S.providers = j.providers; S.catalog = j.catalog || []; S.kinds = j.kinds || []; S.modelsLoaded = true;
     for (const m of S.models.concat(S.catalog)) m._q = (m.label + ' ' + m.id + ' ' + kindInfo(m.kind).name + ' ' + ((provOf(m.provider) || {}).label || '')).toLowerCase();
   }catch{ /* server busy: keep the last list */ }
-  if (!S.model && S.models.length) S.model = (S.recent.find(id => S.models.some(m => m.full_id === id)) || (S.models.find(m => m.local) || S.models[0]).full_id);
+  if (!S.model && S.models.length) S.model = (S.recent.find(id => S.models.some(m => m.full_id === id)) || (S.models.find(m => m.local) || S.models.find(m => !m.issue) || S.models[0]).full_id);
   paintModel();
   if (!$('#picker').hidden) renderPicker();
 }
@@ -184,8 +184,11 @@ function renderPicker(){
     const rec = S.recent.map(id => S.models.find(m => m.full_id === id)).filter(Boolean).slice(0, 3);
     if (rec.length) html += `<li class="grp">Recent</li>` + rec.map(m => item(m, true)).join('');
   }
-  // 1) what you can use right now: local providers, then connected cloud keys
-  for (const p of S.providers){
+  // 1) what you can use right now: local providers with models, then connected cloud keys;
+  //    a local provider with nothing to offer yet (Ollama not running / no models) comes after those
+  const usable = p => S.models.some(m => m.provider === p.id);
+  const ordered = [...S.providers.filter(p => p.local && usable(p)), ...S.providers.filter(p => !p.local), ...S.providers.filter(p => p.local && !usable(p))];
+  for (const p of ordered){
     const ms = S.models.filter(m => m.provider === p.id && hit(m));
     if (p.local){
       if (!ms.length && p.id !== 'ollama') continue;

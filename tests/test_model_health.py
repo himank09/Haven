@@ -99,11 +99,12 @@ def test_success_clears_the_mark(live, gem):
 
 def test_popular_models_listed_first(live, gem):
     ids = list(models(live))
-    # catalog order for Gemini: 4 Carbon, 4 Hydrogen, (4 Argon not offered), 3.5 Flash-Lite; then the rest as listed
-    assert ids[:3] == ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-3.5-flash-lite"]
+    # catalog order for Gemini: the free-plan model first, then 4 Hydrogen, (4 Argon not offered), 4 Carbon
+    assert ids[:3] == ["gemini-3.5-flash-lite", "gemini-4-hydrogen", "gemini-4-carbon"]
     assert set(ids[3:]) == {"gemini-3.8-flash", "gemini-2.5-flash"}
     ms = models(live)
     assert ms["gemini-4-carbon"]["popular"] and not ms["gemini-3.8-flash"]["popular"]
+    assert ms["gemini-3.5-flash-lite"]["label"] == "Gemini 3.5 Flash-Lite"
 
 
 def test_add_a_model_by_name(live, gem, client):

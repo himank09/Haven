@@ -7,32 +7,34 @@ by mistake: it just becomes "needs a key" -> real list.
 from typing import Dict, List
 
 # kind -> [(model id, display name, short note, sees images, can think)]
+# The FIRST model of each provider is the default Haven picks after you add a key: the everyday model,
+# never the most expensive one, and for Gemini one that works on Google's free plan.
 CATALOG: Dict[str, List[tuple]] = {
     "openai": [
-        ("gpt-6.2-astra", "GPT-6.2 Astra", "Flagship, hardest problems", True, True),
         ("gpt-6.2-sol", "GPT-6.2 Sol", "Everyday default", True, True),
+        ("gpt-6.2-astra", "GPT-6.2 Astra", "Flagship, hardest problems", True, True),
         ("gpt-6.1-terra", "GPT-6.1 Terra", "Fast", True, True),
         ("gpt-6-luna", "GPT-6 Luna", "Cheapest", True, False),
     ],
     "anthropic": [
-        ("claude-opus-5-5", "Claude Opus 5.5", "Most capable", True, True),
         ("claude-sonnet-5-5", "Claude Sonnet 5.5", "Everyday default", True, True),
+        ("claude-opus-5-5", "Claude Opus 5.5", "Most capable", True, True),
         ("claude-haiku-5-5", "Claude Haiku 5.5", "Fast and cheap", True, True),
         ("claude-fable-5-2", "Claude Fable 5.2", "Writing and stories", True, True),
     ],
     "gemini": [
-        ("gemini-4-carbon", "Gemini 4 Carbon", "Strongest reasoning", True, True),
-        ("gemini-4-hydrogen", "Gemini 4 Hydrogen", "Everyday default", True, True),
-        ("gemini-4-argon", "Gemini 4 Argon", "Efficient reasoning", True, True),
-        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", "Fastest, free tier friendly", True, False),
+        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", "Fast, works on the free plan", True, False),
+        ("gemini-4-hydrogen", "Gemini 4 Hydrogen", "Everyday, may be busy on the free plan", True, True),
+        ("gemini-4-argon", "Gemini 4 Argon", "Efficient reasoning (paid plan)", True, True),
+        ("gemini-4-carbon", "Gemini 4 Carbon", "Strongest reasoning (paid plan)", True, True),
     ],
     "xai": [
+        ("grok-4.3", "Grok 4.3", "Everyday, 1M context", True, True),
         ("grok-4.7", "Grok 4.7", "Most capable", True, True),
-        ("grok-4.3", "Grok 4.3", "Cheaper, 1M context", True, True),
     ],
     "deepseek": [
-        ("deepseek-v4-pro", "DeepSeek V4 Pro", "Flagship", False, True),
         ("deepseek-flash", "DeepSeek Flash", "Cheap and fast", True, True),
+        ("deepseek-v4-pro", "DeepSeek V4 Pro", "Flagship", False, True),
     ],
     "groq": [
         ("openai/gpt-oss-120b", "GPT OSS 120B", "Very fast open model", False, True),
