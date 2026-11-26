@@ -196,7 +196,7 @@ def test_add_a_model_by_name(pg, live, hub):
     pg.fill(".xm[data-xm=openai] [data-xin]", "my-finetune-v2")
     pg.keyboard.press("Enter")
     pg.wait_for_selector(".xm[data-xm=openai] .xchip:has-text('my-finetune-v2')")
-    assert "my-finetune-v2" in pg.inner_text("#pill")
+    pg.wait_for_function("document.querySelector('#pill').innerText.includes('my-finetune-v2')", timeout=3000)
     hub["openai"].chunks = sse_openai(["custom model here"])
     pg.keyboard.press("Escape")
     send(pg, "hi")

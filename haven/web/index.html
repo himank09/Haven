@@ -78,7 +78,7 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 
 /* ================= app frame: sidebar + main ================= */
 .app{height:100%;display:grid;grid-template-rows:minmax(0,1fr);grid-template-columns:var(--side-w) minmax(0,1fr);transition:grid-template-columns .25s var(--ease)}
-.side-off .app{grid-template-columns:0 minmax(0,1fr)}
+.side-off .app{grid-template-columns:60px minmax(0,1fr)}
 .main{grid-column:2;grid-row:1;position:relative;isolation:isolate;display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;height:100%}
 .aurora{position:absolute;inset:0;z-index:-1;pointer-events:none;transition:opacity .6s var(--ease);
   background:radial-gradient(520px 380px at calc(50% - 230px) 40px,rgba(124,156,255,.40),transparent 70%),
@@ -94,6 +94,49 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .side{min-width:0;overflow:hidden;display:flex;flex-direction:column;background:var(--sunken);border-right:1px solid var(--line);z-index:20}
 .side-off .side{border-right:0}
 .side-in{width:var(--side-w);display:flex;flex-direction:column;height:100%}
+/* collapsed: a slim icon rail; hovering it slides your recent chats out as a floating panel */
+.rail{display:none;flex-direction:column;align-items:center;gap:.25rem;padding:.7rem 0 .8rem;width:60px;height:100%}
+.rail .sp{flex:1}
+.rail .ib.on{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
+.side-off .rail{display:flex}
+.side-off .side-in{display:none}
+.side-off.side-peek .side-in{display:flex;position:fixed;left:66px;top:10px;bottom:10px;height:auto;z-index:45;background:var(--raised);
+  border:1px solid var(--line);border-radius:var(--r-l);box-shadow:var(--sh-3);overflow:hidden;animation:peekIn .18s var(--ease)}
+@keyframes peekIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+.side-off .top #b-side{display:none}
+.top #b-side{display:none}
+/* avatar + profile chip */
+.avatar{--h:225;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:700 .78rem var(--font);color:#fff;
+  background:linear-gradient(135deg,hsl(var(--h) 70% 55%),hsl(calc(var(--h) + 35) 70% 48%));overflow:hidden;flex:none;letter-spacing:.02em}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar.xl{width:72px;height:72px;font-size:1.5rem}
+.me{display:flex;align-items:center;gap:.65rem;width:100%;padding:.4rem .5rem;border-radius:12px;border:0;background:none;text-align:left;min-width:0}
+.me:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.me .who{display:flex;flex-direction:column;min-width:0;flex:1}
+.me .nm{font-weight:600;font-size:.9rem;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me .sub{font-size:.76rem;color:var(--ink-3)}
+.me svg{width:16px;height:16px;color:var(--ink-3)}
+.me-mini{border:0;background:none;padding:2px;border-radius:50%}
+.me-mini:hover .avatar{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 30%,transparent)}
+/* tooltips (instead of the plain Windows title boxes) */
+.tip{position:fixed;z-index:95;max-width:260px;padding:.32rem .55rem;border-radius:8px;background:var(--ink);color:var(--bg);font-size:.78rem;font-weight:500;
+  line-height:1.35;box-shadow:var(--sh-2);pointer-events:none;opacity:0;transform:translateY(2px);transition:opacity .12s,transform .12s}
+.tip.on{opacity:1;transform:none}
+/* profile form */
+.profhead{display:flex;align-items:center;gap:1rem;margin:.2rem 0 1rem}
+.profhead .acts2{display:flex;flex-direction:column;gap:.5rem}
+.swatches{display:flex;gap:.35rem}
+.swatches button{width:22px;height:22px;border-radius:50%;border:2px solid transparent;background:hsl(var(--h) 65% 52%);padding:0}
+.swatches button.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--raised) inset}
+.frow{display:grid;grid-template-columns:200px minmax(0,1fr);gap:.4rem 1rem;align-items:center;padding:.8rem 1rem}
+.frow+.frow,.frow+.setrow,.setrow+.frow{border-top:1px solid var(--line)}
+.frow>span{font-weight:500;font-size:.9rem}
+.frow.col{grid-template-columns:1fr}
+.frow small{color:var(--ink-3);font-size:.76rem;justify-self:end}
+.fld.ta{height:auto;min-height:96px;padding:.55rem .75rem;resize:vertical;line-height:1.5}
+@media (max-width:720px){.frow{grid-template-columns:1fr}}
+#thread.fade{animation:fadeIn .2s var(--ease)}
+@keyframes fadeIn{from{opacity:.0}to{opacity:1}}
 .side-top{display:flex;align-items:center;gap:.4rem;padding:.7rem .7rem .5rem}
 .newchat{flex:1;display:flex;align-items:center;gap:.5rem;height:38px;padding:0 .75rem;border-radius:var(--r-s);border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:.9rem;box-shadow:var(--sh-1)}
 .newchat:hover{border-color:var(--line-2)}
@@ -114,7 +157,7 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .conv:hover .menu,.conv.on .menu,.conv .menu:focus-visible{opacity:1}
 .conv .menu:hover{background:var(--sunken);color:var(--ink)}
 .conv input{flex:1;min-width:0;height:26px;border:1px solid var(--brand);border-radius:6px;padding:0 .4rem;background:var(--bg);outline:0;font-size:.88rem}
-.side-foot{padding:.6rem .9rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--ink-3);display:flex;gap:.5rem;align-items:center}
+.side-foot{padding:.5rem .5rem .6rem;border-top:1px solid var(--line);display:flex;gap:.5rem;align-items:center}
 .side-empty{padding:1rem .8rem;color:var(--ink-3);font-size:.86rem}
 .popmenu{position:fixed;z-index:70;min-width:170px;padding:.3rem;border-radius:12px;background:var(--raised);border:1px solid var(--line);box-shadow:var(--sh-3)}
 .popmenu button{display:flex;align-items:center;gap:.55rem;width:100%;height:34px;padding:0 .6rem;border:0;border-radius:8px;background:none;font-size:.88rem;text-align:left}
@@ -488,8 +531,17 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
   .app,.side-off .app{grid-template-columns:0 minmax(0,1fr)}
   .side{position:fixed;left:0;top:0;bottom:0;width:var(--side-w);transform:translateX(-102%);transition:transform .25s var(--ease);box-shadow:var(--sh-3)}
   .side-open .side{transform:none}
+  .side-off .rail{display:none}
+  .side-off .side-in,.side-off.side-peek .side-in{display:flex;position:static;animation:none;border:0;border-radius:0;box-shadow:none;background:none}
+  .side-off .top #b-side,.top #b-side{display:grid}
   .brand .word{display:none}
   .pill{max-width:52vw}
+}
+@media (max-width:640px){
+  .chips,.tiles{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;mask-image:linear-gradient(to right,#000 90%,transparent)}
+  .chips::-webkit-scrollbar,.tiles::-webkit-scrollbar{display:none}
+  .chip,.tile{flex:none}
+  .hint{display:none}
 }
 @media (max-width:680px){.pill .tag{display:none}.hero{padding:1.2rem 0 1.1rem}.hero .arch{width:52px;height:52px;margin-bottom:.8rem}.uwrap{max-width:92%}.theme{display:none}}
 @media (max-height:640px){.hero .arch{display:none}.hero{padding:.8rem 0}.tiles{display:none}}
@@ -498,14 +550,22 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 <body>
 <div class="app" id="app">
   <aside class="side" id="side" aria-label="Conversations">
-    <div class="side-in">
+    <div class="rail" id="rail">
+      <button class="ib" id="r-open" title="Open sidebar"></button>
+      <button class="ib" id="r-new" title="New chat (Ctrl N)"></button>
+      <button class="ib" id="r-search" title="Search chats (Ctrl Shift F)"></button>
+      <button class="ib" id="r-recent" title="Recent chats"></button>
+      <span class="sp"></span>
+      <button class="me-mini" id="r-me" title="Profile and settings"><span class="avatar" id="r-av"></span></button>
+    </div>
+    <div class="side-in" id="sidein">
       <div class="side-top">
         <button class="newchat" id="b-new2" title="New chat (Ctrl N)"><span id="ic-new"></span>New chat<kbd>Ctrl N</kbd></button>
-        <button class="ib" id="b-side-close" title="Hide sidebar"></button>
+        <button class="ib" id="b-side-close" title="Collapse sidebar"></button>
       </div>
       <div class="side-search"><span id="ic-cq"></span><input id="cq" placeholder="Search chats" autocomplete="off" spellcheck="false" aria-label="Search chats"></div>
       <nav class="convs" id="convs"></nav>
-      <div class="side-foot"><span class="st ok" id="sidestatus">Haven 1.0</span></div>
+      <div class="side-foot"><button class="me" id="me" title="Profile and settings"><span class="avatar" id="me-av"></span><span class="who"><span class="nm" id="me-nm">Set up your profile</span><span class="sub">Haven 1.0 · Settings</span></span><span id="me-gear"></span></button></div>
     </div>
   </aside>
 
@@ -575,6 +635,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 <div class="dlg" id="sheet" role="dialog" aria-modal="true" aria-labelledby="dlgtitle">
   <nav class="dlg-nav" aria-label="Settings sections">
     <h2 id="dlgtitle">Settings</h2>
+    <button class="tab" data-tab="profile"><span id="ic-prof"></span>Profile</button>
     <button class="tab on" data-tab="models"><span id="ic-keys"></span>Models &amp; keys</button>
     <button class="tab" data-tab="privacy"><span id="ic-shield"></span>Privacy</button>
     <button class="tab" data-tab="addons"><span id="ic-ext"></span>Add-ons</button>
@@ -582,6 +643,23 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
   </nav>
   <div class="dlg-body" id="dlgbody">
     <button class="ib dlg-x" id="b-close" title="Close (Esc)"></button>
+    <section class="tabp" data-p="profile" hidden>
+      <h3>Profile</h3>
+      <p class="lead">How Haven greets you and what it should know about you. Saved only on this PC.</p>
+      <div class="profhead"><span class="avatar xl" id="pf-av"></span>
+        <div class="acts2"><div class="row" style="margin:0"><button class="btn small" id="pf-photo">Upload photo</button><button class="btn small ghost" id="pf-rmphoto" hidden>Remove photo</button></div>
+          <div class="swatches" id="pf-colors" aria-label="Avatar colour"></div></div></div>
+      <div class="plist">
+        <label class="frow"><span>Name</span><input class="fld" id="pf-name" maxlength="60" autocomplete="name" placeholder="Your name"></label>
+        <label class="frow"><span>What should Haven call you?</span><input class="fld" id="pf-call" maxlength="40" placeholder="A first name or nickname"></label>
+        <label class="frow col"><span>What should Haven know about you?</span><textarea class="fld ta" id="pf-about" maxlength="1500" placeholder="e.g. I'm an engineering student in Pune. Explain maths step by step, and use Indian examples."></textarea><small id="pf-count">0 / 1500</small></label>
+        <div class="frow"><span>Answers</span><div class="seg" id="pf-style"><button data-v="concise">Concise</button><button data-v="balanced">Balanced</button><button data-v="detailed">Detailed</button></div></div>
+        <label class="frow"><span>Reply language</span><input class="fld" id="pf-lang" maxlength="40" placeholder="Same as my message"></label>
+        <div class="setrow"><div class="grow"><b>Use my profile in chats</b><p>Adds your name, notes and answer style to every chat. With a cloud model the Privacy Shield still hides personal details in it.</p></div>
+          <label class="switch"><input type="checkbox" id="pf-use" checked aria-label="Use my profile in chats"><span></span></label></div>
+      </div>
+      <div class="row" style="margin-top:1rem"><span class="small" id="pf-msg"></span><span style="flex:1"></span><button class="btn primary" id="pf-save">Save profile</button></div>
+    </section>
     <section class="tabp" data-p="models">
       <h3>Models &amp; keys</h3>
       <p class="lead">Local models run on this PC and keep everything private. Cloud models need a key from that provider; add as many as you like.</p>

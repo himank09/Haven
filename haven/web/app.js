@@ -56,7 +56,9 @@ const P = {
   plus:'<path d="M12 5v14M5 12h14"/>', regen:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
   key:'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M15 8l2 2"/>', lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   dl:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
-  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', ext:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
+  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  chats:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14h4"/>', ext:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   shield:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
   shieldoff:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="M4 4l16 16"/>'
 };
@@ -65,7 +67,7 @@ const archW = s => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="no
 $('#mark').innerHTML = archW(16); $('#heroarch').innerHTML = archW(32); $('#droparch').innerHTML = archW(28);
 [['#b-search','search'],['#b-gear','gear'],['#b-attach','clip'],['#b-close','x'],['#palicon','search'],['#ic-keys','key'],['#ic-ext','puzzle'],
  ['#b-side','side'],['#b-side-close','side'],['#ic-new','plus'],['#ic-cq','search'],['#ic-pq','search'],['#pillchev','chev'],['#tobottom','down'],
- ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield'],['#ic-about','info']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
+ ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield'],['#ic-about','info'],['#r-open','side'],['#r-new','edit'],['#r-search','search'],['#r-recent','chats'],['#ic-prof','user'],['#me-gear','gear']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
 $('#think').innerHTML = ic('bulb') + 'Think';
 $('#send').innerHTML = ic('up');
 
@@ -74,7 +76,7 @@ const S = {
   models: [], providers: [], modelsLoaded: false,
   model: store.get('model2', ''), recent: store.get('recentModels', []),
   convs: [], conv: null, live: new Map(), editing: null, stick: true, gen: 0,
-  shield: true, shieldOk: store.get('shieldOk', {}), catalog: [], kinds: [],
+  shield: true, shieldOk: store.get('shieldOk', {}), catalog: [], kinds: [], profile: {},
 };
 window.haven = S; // handy in DevTools (and for the UI tests)
 const minfo = id => S.models.find(m => m.full_id === id) || S.catalog.find(m => m.full_id === id);
@@ -369,7 +371,7 @@ async function openConv(id){
   S.conv = {...c.conversation, messages: c.messages}; S.editing = null; $('#editing').hidden = true;
   store.set('conv', id);
   if (c.conversation.model && c.conversation.model !== S.model){ S.model = c.conversation.model; store.set('model2', S.model); paintModel(); }
-  renderThread(); renderSide(); setBusyUI(); closeDrawer(); paintDock();
+  renderThread(); renderSide(); setBusyUI(); closeDrawer(); paintDock(); peek(false, true);
 }
 function newChat(focus = true){
   S.gen++; S.conv = null; S.editing = null; $('#editing').hidden = true; store.set('conv', '');
@@ -384,8 +386,30 @@ function toggleSide(){
   if (narrow()){ document.documentElement.classList.toggle('side-open'); return; }
   const off = document.documentElement.classList.toggle('side-off'); store.set('side', !off);
 }
-function closeDrawer(){ document.documentElement.classList.remove('side-open'); }
-$('#b-side').onclick = $('#b-side-close').onclick = toggleSide;
+function closeDrawer(){ document.documentElement.classList.remove('side-open'); peek(false, true); }
+let peekT;
+function peek(on, now){
+  clearTimeout(peekT);
+  const root = document.documentElement;
+  if (on){
+    if (!root.classList.contains('side-off') || narrow()) return;
+    peekT = setTimeout(() => { root.classList.add('side-peek'); $('#r-recent').classList.add('on'); }, now ? 0 : 120);
+  } else {
+    const off = () => { root.classList.remove('side-peek'); $('#r-recent').classList.remove('on'); };
+    if (now) off(); else peekT = setTimeout(off, 260);
+  }
+}
+$('#rail').addEventListener('mouseenter', () => peek(true));
+$('#rail').addEventListener('mouseleave', () => peek(false));
+$('#sidein').addEventListener('mouseenter', () => { if (document.documentElement.classList.contains('side-peek')) clearTimeout(peekT); });
+$('#sidein').addEventListener('mouseleave', () => { if (!$('#sidein').contains(document.activeElement) || !$('#cq').value) peek(false); });
+$('#r-open').onclick = () => { peek(false, true); toggleSide(); };
+$('#r-new').onclick = () => { peek(false, true); newChat(); };
+$('#r-recent').onclick = () => document.documentElement.classList.contains('side-peek') ? peek(false, true) : peek(true, true);
+$('#r-search').onclick = () => { peek(true, true); setTimeout(() => $('#cq').focus(), 20); };
+$('#r-me').onclick = $('#me').onclick = () => { peek(false, true); openSheet('profile'); };
+$('#b-side').onclick = toggleSide;
+$('#b-side-close').onclick = () => { if (document.documentElement.classList.contains('side-peek')){ peek(false, true); document.documentElement.classList.remove('side-off'); store.set('side', true); } else toggleSide(); };
 addEventListener('resize', () => { if (!narrow()) closeDrawer(); });
 document.addEventListener('click', e => { if (narrow() && document.documentElement.classList.contains('side-open') && !e.target.closest('#side') && !e.target.closest('#b-side')) closeDrawer(); });
 
@@ -475,9 +499,10 @@ function convertTargets(){
 let presetTo = null;
 const FMT_NAME = {docx:'Word', xlsx:'Excel', pptx:'PowerPoint', odt:'ODT', ods:'ODS', odp:'ODP', md:'Markdown', txt:'Text', jpg:'JPG'};
 const fmtLabel = x => FMT_NAME[x] || x.toUpperCase();
-const TILES = [['compress','Compress'],['merge','Merge PDFs'],['split','Split PDF'],['delete','Remove pages'],['from-images','Images to PDF'],['convert','Convert'],['rotate','Rotate PDF'],['summary','Summarise']];
+const TILES = [['compress','Compress'],['merge','Merge PDFs'],['convert','Convert'],['summary','Summarise']];
 $('#tiles').innerHTML = TILES.map(([id, label]) => { const a = ACT(id); return `<button class="tile" data-t="${id}"><span class="d c-${a.c}">${ic(a.icon, 19)}</span><b>${label}</b></button>`; }).join('');
-$$('#tiles .tile').forEach(b => b.onclick = () => startTool(b.dataset.t));
+$('#tiles').insertAdjacentHTML('beforeend', `<button class="tile" data-more="1" title="All tools (Ctrl K)"><span class="d" style="background:var(--sunken);color:var(--ink-2)">${ic('more', 19)}</span><b>More tools</b></button>`);
+$$('#tiles .tile').forEach(b => b.onclick = () => b.dataset.more ? openPal() : startTool(b.dataset.t));
 function startTool(id){
   const a = ACT(id);
   if (a.write){ $('#input').focus(); return; }
@@ -505,7 +530,9 @@ function paintDock(){
 function paintEmpty(){
   const noModels = S.modelsLoaded && !S.models.length;
   $('#onboard').hidden = !noModels;
-  $('#greet').textContent = files.length ? (files.length === 1 ? 'What should I do with this file?' : 'What should I do with these files?') : 'What can I help with?';
+  const nm = (S.profile.call || S.profile.name || '').trim().split(/\s+/)[0];
+  const hr = new Date().getHours(), part = hr < 5 ? 'Hello' : hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+  $('#greet').textContent = files.length ? (files.length === 1 ? 'What should I do with this file?' : 'What should I do with these files?') : nm ? `${part}, ${nm}` : 'What can I help with?';
   const chips = files.length
     ? [['Summarise this', () => run(ACT('summary'))], ['Key points', () => doc1() ? run(ACT('points')) : ask('List the key points of this.', 'Key points')],
        ['What dates and deadlines are in it?', () => ask('List every date, deadline and amount mentioned, with what each one is for.')], ['Ask a question about it', () => $('#input').focus()]]
@@ -667,6 +694,7 @@ function markLast(){ $$('#thread .a.last').forEach(x => x.classList.remove('last
 function renderThread(){
   const gen = ++S.gen, th = $('#thread');
   th.innerHTML = '';
+  th.classList.remove('fade'); void th.offsetWidth; th.classList.add('fade');
   const msgs = S.conv ? S.conv.messages : [];
   setEmpty(!msgs.length, true);
   const N = 40, start = Math.max(0, msgs.length - N), frag = document.createDocumentFragment();
@@ -1004,9 +1032,10 @@ addEventListener('keydown', e => {
   if (mod && !e.shiftKey && k === 'k'){ e.preventDefault(); $('#pal').classList.contains('on') ? closePal() : openPal(); }
   else if (mod && !e.shiftKey && k === 'n'){ e.preventDefault(); newChat(); }
   else if (mod && !e.shiftKey && k === 'm'){ e.preventDefault(); $('#picker').hidden ? openPicker() : closePicker(); }
-  else if (mod && e.shiftKey && k === 'f'){ e.preventDefault(); if (narrow()) document.documentElement.classList.add('side-open'); else if (document.documentElement.classList.contains('side-off')) toggleSide(); $('#cq').focus(); $('#cq').select(); }
+  else if (mod && e.shiftKey && k === 'f'){ e.preventDefault(); if (narrow()) document.documentElement.classList.add('side-open'); else if (document.documentElement.classList.contains('side-off')){ peek(true, true); setTimeout(() => { $('#cq').focus(); $('#cq').select(); }, 20); return; } $('#cq').focus(); $('#cq').select(); }
   else if (e.key === 'Escape'){
     if ($$('.popmenu').length){ closeMenus(); return; }
+    if (document.documentElement.classList.contains('side-peek')){ peek(false, true); return; }
     if (!$('#picker').hidden){ closePicker(); return; }
     if ($('#pal').classList.contains('on') || $('#sheet').classList.contains('on')){ closePal(); closeSheet(); return; }
     if (!$('#param').hidden){ closeParam(); return; }
@@ -1031,6 +1060,77 @@ document.addEventListener('mouseover', e => {
 });
 $('#shield').onclick = () => setShield(!S.shield);
 
+/* ===================== profile ===================== */
+const HUES = [225, 265, 300, 340, 15, 35, 150, 185];
+function initials(p){ const n = (p.name || p.call || '').trim(); if (!n) return ''; const w = n.split(/\s+/); return ((w[0][0] || '') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+function avatarHtml(p){ return p.image ? `<img src="${esc(p.image)}" alt="">` : (initials(p) ? esc(initials(p)) : ic('user', 16)); }
+function paintProfile(){
+  const p = S.profile;
+  for (const el of [$('#me-av'), $('#r-av'), $('#pf-av')]){ el.innerHTML = avatarHtml(p); el.style.setProperty('--h', p.hue ?? 225); }
+  $('#me-nm').textContent = p.name || p.call || 'Set up your profile';
+  paintEmpty();
+}
+async function loadProfile(){ try{ S.profile = await jget('/api/profile'); }catch{ S.profile = {}; } paintProfile(); }
+let pfImage = null, pfHue = 225, pfStyle = 'balanced';
+function fillProfileForm(){
+  const p = S.profile;
+  $('#pf-name').value = p.name || ''; $('#pf-call').value = p.call || ''; $('#pf-about').value = p.about || ''; $('#pf-lang').value = p.language || '';
+  $('#pf-use').checked = p.use_in_chats !== false; pfImage = p.image || ''; pfHue = p.hue ?? 225; pfStyle = p.style || 'balanced';
+  $('#pf-count').textContent = `${$('#pf-about').value.length} / 1500`; $('#pf-msg').textContent = '';
+  previewProfile();
+}
+function previewProfile(){
+  const p = {name: $('#pf-name').value, call: $('#pf-call').value, image: pfImage, hue: pfHue};
+  $('#pf-av').innerHTML = avatarHtml(p); $('#pf-av').style.setProperty('--h', pfHue);
+  $('#pf-rmphoto').hidden = !pfImage;
+  $('#pf-colors').innerHTML = HUES.map(h => `<button style="--h:${h}" data-h="${h}" class="${h === pfHue ? 'on' : ''}" title="Colour" aria-label="Avatar colour"></button>`).join('');
+  $$('#pf-style button').forEach(b => b.classList.toggle('on', b.dataset.v === pfStyle));
+}
+$('#pf-name').oninput = $('#pf-call').oninput = previewProfile;
+$('#pf-about').oninput = () => { $('#pf-count').textContent = `${$('#pf-about').value.length} / 1500`; };
+$('#pf-colors').onclick = e => { const b = e.target.closest('[data-h]'); if (b){ pfHue = +b.dataset.h; previewProfile(); } };
+$('#pf-style').onclick = e => { const b = e.target.closest('[data-v]'); if (b){ pfStyle = b.dataset.v; previewProfile(); } };
+$('#pf-rmphoto').onclick = () => { pfImage = ''; previewProfile(); };
+$('#pf-photo').onclick = () => {
+  const inp = Object.assign(document.createElement('input'), {type: 'file', accept: 'image/*'});
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => {
+    const c = document.createElement('canvas'), z = 256, k = Math.max(z / img.width, z / img.height); c.width = c.height = z;
+    c.getContext('2d').drawImage(img, (z - img.width * k) / 2, (z - img.height * k) / 2, img.width * k, img.height * k);
+    pfImage = c.toDataURL('image/jpeg', 0.85); previewProfile(); }; img.src = r.result; }; r.readAsDataURL(f); };
+  inp.click();
+};
+$('#pf-save').onclick = async () => {
+  const body = {name: $('#pf-name').value, call: $('#pf-call').value, about: $('#pf-about').value, language: $('#pf-lang').value,
+                style: pfStyle, hue: pfHue, image: pfImage, use_in_chats: $('#pf-use').checked};
+  const r = await jpost('/api/profile', body);
+  if (!r.ok){ $('#pf-msg').textContent = await errorOf(r); return; }
+  S.profile = await r.json(); paintProfile(); $('#pf-msg').textContent = 'Saved'; toast('Profile saved');
+};
+
+/* ===================== tooltips ===================== */
+// Styled tooltips instead of the browser's plain title boxes. The title moves to aria-label so screen readers keep it.
+let tipEl = null, tipT = 0, tipShownAt = 0;
+function hideTip(){ clearTimeout(tipT); if (tipEl){ tipEl.classList.remove('on'); tipShownAt = performance.now(); } }
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('[title],[data-tip]');
+  if (!t || t.closest('.picker li') || t.matches('input,textarea,select')) return;
+  if (t.hasAttribute('title')){ const v = t.getAttribute('title'); t.dataset.tip = v; if (!t.hasAttribute('aria-label') && !t.textContent.trim()) t.setAttribute('aria-label', v); t.removeAttribute('title'); }
+  clearTimeout(tipT);
+  const quick = performance.now() - tipShownAt < 600;
+  tipT = setTimeout(() => {
+    if (!t.isConnected || !t.matches(':hover')) return;
+    if (!tipEl){ tipEl = document.createElement('div'); tipEl.className = 'tip'; tipEl.setAttribute('role', 'tooltip'); document.body.appendChild(tipEl); }
+    tipEl.textContent = t.dataset.tip;
+    const r = t.getBoundingClientRect(), w = tipEl.offsetWidth, hh = tipEl.offsetHeight;
+    const below = r.bottom + hh + 10 < innerHeight;
+    tipEl.style.left = Math.max(6, Math.min(innerWidth - w - 6, r.left + r.width / 2 - w / 2)) + 'px';
+    tipEl.style.top = (below ? r.bottom + 7 : r.top - hh - 7) + 'px';
+    tipEl.classList.add('on');
+  }, quick ? 60 : 450);
+});
+document.addEventListener('mouseout', e => { if (e.target.closest('[data-tip]')) hideTip(); });
+addEventListener('mousedown', hideTip, true); addEventListener('scroll', hideTip, true); addEventListener('keydown', hideTip, true);
+
 /* ===================== settings ===================== */
 const HUE = {ollama:150, lmstudio:265, openai:160, anthropic:22, gemini:215, openrouter:250, groq:5, xai:0, deepseek:225, mistral:30, together:200, fireworks:15, cerebras:280, huggingface:45, custom:200};
 const mono = k => { const n = kindInfo(k).name || k, w = n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean);
@@ -1046,6 +1146,7 @@ function openSheet(tab = 'models', kind = null, addModelFor = null){
 }
 function closeSheet(){ $('#sheet').classList.remove('on'); if (!$('#pal').classList.contains('on')) $('#scrim').classList.remove('on'); }
 function showTab(t){
+  if (t === 'profile') fillProfileForm();
   $$('.dlg .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.dlg .tabp').forEach(p => p.hidden = p.dataset.p !== t);
   $('#dlgbody').scrollTop = 0;
@@ -1215,6 +1316,7 @@ async function migrate(){
   paintDock(); paintModel(); $('#input').focus({preventScroll:true});
   await migrate();
   try{ S.shield = (await jget('/api/settings')).shield !== false; }catch{}
+  await loadProfile();
   await Promise.all([refreshModels(), loadConvs()]);
   const last = store.get('conv', '');
   if (last && S.convs.some(c => c.id === last)) await openConv(last); else renderThread();
