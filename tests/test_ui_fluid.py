@@ -139,7 +139,7 @@ def test_profile_saved_shown_and_used_in_chats(pg, live, hub):
     assert p["name"] == "Asha Verma" and p["call"] == "Asha" and p["style"] == "concise" and p["hue"] == 265
     assert pg.inner_text("#me-nm") == "Asha Verma" and pg.inner_text("#r-av") == "AV"
     pg.keyboard.press("Escape")
-    assert pg.inner_text("#greet").endswith(", Asha")
+    assert pg.inner_text("#greet").upper().endswith(", ASHA")
     hub["ollama"].chunks = ndjson_ollama(["Hi Asha"])
     send(pg, "hello")
     wait_done(pg)

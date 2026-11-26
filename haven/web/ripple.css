@@ -1,0 +1,83 @@
+/* "Ripple haze": a pastel lavender/teal haze with film grain, thin ripple rings behind the welcome screen,
+   light monospaced display type and small mono labels. Loaded after aurora.css. Static layers (grain, rings)
+   cost nothing at idle; the rings only breathe while you're using Haven (html.alive). */
+@font-face{font-family:"Plex Mono";font-weight:300;font-display:swap;src:url(/fonts/ibm-plex-mono-latin-300-normal.woff2) format("woff2")}
+@font-face{font-family:"Plex Mono";font-weight:400;font-display:swap;src:url(/fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Plex Mono";font-weight:500;font-display:swap;src:url(/fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2")}
+
+:root{
+  --display:"Plex Mono",ui-monospace,Consolas,monospace;
+  --a1:#a18ff0; --a2:#7fd1c3; --a3:#c9b8f5;                     /* lavender, mint-teal, lilac */
+  --bg:#f3eff7; --side-bg:rgba(246,243,250,.6);
+  --accent:#6b56d6; --accent-2:#2f9e8f;
+  --accent-grad:linear-gradient(120deg,#7c68e0 0%,#8d7de6 45%,#3fa999 100%);
+  --brand:#6b56d6; --brand-text:#4c3bb0; --ring:#9d8cf0;
+  --ripple:rgba(40,30,80,.16);
+  --glow:0 10px 34px -12px rgba(107,86,214,.45);
+}
+:root[data-theme=dark]{
+  --a1:#5b45c9; --a2:#1f7f74; --a3:#3c2f7a;
+  --bg:#0c0b14; --side-bg:rgba(16,14,26,.6);
+  --accent:#b3a6ff; --accent-2:#6fd6c7;
+  --accent-grad:linear-gradient(120deg,#9c8cff 0%,#b3a6ff 45%,#6fd6c7 100%);
+  --brand:#b3a6ff; --brand-text:#cfc6ff; --ring:#b3a6ff;
+  --ripple:rgba(220,210,255,.12);
+  --glow:0 10px 36px -12px rgba(179,166,255,.5);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --a1:#5b45c9; --a2:#1f7f74; --a3:#3c2f7a;
+  --bg:#0c0b14; --side-bg:rgba(16,14,26,.6);
+  --accent:#b3a6ff; --accent-2:#6fd6c7;
+  --accent-grad:linear-gradient(120deg,#9c8cff 0%,#b3a6ff 45%,#6fd6c7 100%);
+  --brand:#b3a6ff; --brand-text:#cfc6ff; --ring:#b3a6ff;
+  --ripple:rgba(220,210,255,.12);
+  --glow:0 10px 36px -12px rgba(179,166,255,.5);
+}}
+
+/* ---------- the haze: bigger, softer light ---------- */
+.app::before{width:85vw;height:85vw;left:-20vw;top:-30vw;opacity:.7}
+.app::after{width:75vw;height:75vw;right:-25vw;top:20vh;opacity:.6}
+.main>.aurora{width:70vw;height:70vw;opacity:.45}
+
+/* ---------- film grain over everything (static SVG noise, no animation) ---------- */
+body::after{content:"";position:fixed;inset:0;z-index:200;pointer-events:none;opacity:.05;contain:strict;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+:root[data-theme=dark] body::after{opacity:.035}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) body::after{opacity:.035}}
+
+/* ---------- ripple rings behind the welcome screen ---------- */
+.main::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:0;transition:opacity .8s var(--glide);
+  background:
+    radial-gradient(circle at 50% 46%,transparent 0 179px,var(--ripple) 179.5px 180.5px,transparent 181px),
+    radial-gradient(circle at 50% 46%,transparent 0 299px,var(--ripple) 299.5px 300.5px,transparent 301px),
+    radial-gradient(circle at 50% 46%,transparent 0 449px,var(--ripple) 449.5px 450.5px,transparent 451px),
+    radial-gradient(circle at 50% 46%,transparent 0 629px,var(--ripple) 629.5px 630.5px,transparent 631px);
+  -webkit-mask-image:radial-gradient(circle at 50% 46%,#000 30%,transparent 75%);mask-image:radial-gradient(circle at 50% 46%,#000 30%,transparent 75%);
+  transform-origin:50% 46%;animation:ripple 9s ease-in-out infinite;animation-play-state:paused}
+.main:has(.stage.empty)::after{opacity:1}
+.alive .main::after{animation-play-state:running}
+@keyframes ripple{50%{transform:scale(1.04);opacity:.7}}
+
+/* ---------- type: light monospaced display, small mono labels ---------- */
+.hero h1{font-family:var(--display);font-weight:300;text-transform:uppercase;letter-spacing:.02em;line-height:1.12;font-size:clamp(1.9rem,4vw,3rem)}
+.hero h1 span{background:none;color:inherit}
+.hero p{font-size:1.02rem;color:var(--ink-2)}
+.hero .arch{border-radius:50%}
+.brand{font-family:var(--display);font-weight:500;text-transform:uppercase;letter-spacing:.14em;font-size:.86rem}
+.convs .grp,.picker .grp,.pal .grp,.dlg-nav h2,.hint,.foot,.meta,.badge,.pill .tag,.tag,.tabp h3,.dlg-nav .tab{font-family:var(--display)}
+.convs .grp,.picker .grp,.pal .grp{text-transform:uppercase;letter-spacing:.12em;font-size:.68rem;font-weight:500}
+.dlg-nav h2,.tabp h3{text-transform:uppercase;letter-spacing:.06em;font-weight:400}
+.hint,.foot{text-transform:uppercase;letter-spacing:.1em;font-size:.68rem}
+.hint kbd{font-family:var(--display)}
+.meta{letter-spacing:.02em;font-size:.72rem}
+.badge,.pill .tag,.tag{text-transform:uppercase;letter-spacing:.08em;font-size:.64rem}
+
+/* ---------- soft translucent pills ---------- */
+.chip,.tile,.act,.tg,.imgmodel,.newchat,.retry button,.btn{border-radius:999px!important}
+.chip,.tile,.act{background-color:color-mix(in srgb,var(--surface) 55%,transparent)}
+.btn.primary,.send{border-radius:999px!important;background:color-mix(in srgb,var(--accent) 78%,transparent);color:#fff;backdrop-filter:blur(10px)}
+:root[data-theme=dark] .btn.primary,:root[data-theme=dark] .send{color:#120c2a}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .btn.primary,:root:not([data-theme=light]) .send{color:#120c2a}}
+.send.stop{background:color-mix(in srgb,var(--accent) 78%,transparent)}
+.composer{border-radius:26px}
+.u{border-radius:20px 20px 6px 20px}

@@ -165,7 +165,7 @@ def test_locked_popular_model_explains_and_unlocks_after_adding_key(pg, live, hu
     locked.click()
     pg.wait_for_selector("#notice:not([hidden])")
     assert "GPT-6.2 Sol needs an OpenAI API key" in pg.inner_text("#notice")
-    assert "Needs key" in pg.inner_text("#pill")
+    assert "NEEDS KEY" in pg.inner_text("#pill").upper()
     send(pg, "hello")  # nothing is sent while the model is locked
     assert pg.locator("#thread > *").count() == 0 and hub["openai"].chat_requests() == []
     pg.click("#noticebtn")  # -> Settings, OpenAI card, key field open
@@ -176,7 +176,7 @@ def test_locked_popular_model_explains_and_unlocks_after_adding_key(pg, live, hu
     pg.wait_for_selector(".pcard[data-kind=openai] .stat.ok")
     assert "Connected" in pg.inner_text(".pcard[data-kind=openai]")
     assert K.OPENAI not in pg.content()
-    pg.wait_for_function("document.querySelector('#pill').innerText.includes('Cloud')")
+    pg.wait_for_function("document.querySelector('#pill').innerText.toUpperCase().includes('CLOUD')")
     assert "GPT-6.2 Sol" in pg.inner_text("#pill")  # the model you picked is now unlocked and selected
     pg.keyboard.press("Escape")
     pg.click("#pill")

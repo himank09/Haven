@@ -40,7 +40,7 @@ def say(hub, *pieces, delay=0.0):
 # ---------------- send / copy / regenerate / edit ----------------
 def test_send_stream_copy_regenerate_edit(pg, live, hub):
     open_app(pg, live)
-    assert "qwen3:4b" in pg.inner_text("#pill") and "Private" in pg.inner_text("#pill")
+    assert "qwen3:4b" in pg.inner_text("#pill") and "PRIVATE" in pg.inner_text("#pill").upper()
     say(hub, "Here is **bold** text\n\n", "- item one\n", "- item two", delay=0.05)
     send(pg, "first question")
     pg.wait_for_selector("#send.stop")                         # streaming visible
@@ -144,12 +144,12 @@ def test_model_picker_groups_badges_and_switch(pg, live, hub):
     groups = pg.locator("#pl .grp").all_inner_texts()
     assert any("ollama" in g.lower() for g in groups) and any("openai" in g.lower() for g in groups)
     row = pg.locator("#pl li.m", has_text="gpt-4o")
-    assert "Cloud" in row.inner_text() and row.locator("svg").count() >= 1  # vision icon
-    assert "Private" in pg.locator("#pl li.m", has_text="qwen3:4b").inner_text()
+    assert "CLOUD" in row.inner_text().upper() and row.locator("svg").count() >= 1  # vision icon
+    assert "PRIVATE" in pg.locator("#pl li.m", has_text="qwen3:4b").inner_text().upper()
     pg.fill("#pq", "o4")
     assert pg.locator("#pl li.m").count() == 1
     pg.keyboard.press("Enter")
-    assert "o4-mini" in pg.inner_text("#pill") and "Cloud" in pg.inner_text("#pill")
+    assert "o4-mini" in pg.inner_text("#pill") and "CLOUD" in pg.inner_text("#pill").upper()
     assert "OpenAI" in pg.inner_text("#foottxt")
     assert pg.is_visible("#think")  # reasoning model: Think shown
     pg.keyboard.press("Control+m")
