@@ -161,6 +161,7 @@ async def resolve_or_400(model_id: str) -> Tuple[ProviderConfig, ModelInfo]:
 
 
 SAVE_EVERY = 2.0  # seconds: a crash loses at most this much of a streaming answer
+RETRY_BUSY_AFTER = 2.0  # seconds before the one automatic retry of an overloaded model
 
 
 class Saver:
@@ -275,19 +276,33 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
                 yield out({"note": f"Sent without checking (Privacy Shield can't read images or scans): {', '.join(prep.uncheckable)}."})
         elif not cfg.local:
             yield out({"note": f"Privacy Shield is off: messages and files go to {cfg.name} as written."})
-        try:
-            async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
-                if ev.get("done"):
-                    done = ev
+        for attempt in (1, 2):
+            got_text = False
+            try:
+                async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
+                    if ev.get("done"):
+                        done = ev
+                        continue
+                    if "content" in ev or "thinking" in ev:
+                        got_text = True
+                    yield out(ev)
+                registry.HEALTH.pop(model.full_id, None)  # it answered: forget any earlier problem
+                break
+            except ProviderError as e:
+                if attempt == 1 and e.kind == "busy" and not got_text:  # brief overload: one quiet retry
+                    yield out({"note": f"{model.label or model.id} is busy; trying once more…"})
+                    await asyncio.sleep(RETRY_BUSY_AFTER)
                     continue
-                yield out(ev)
-        except ProviderError as e:
-            yield out({"error": redact(e.message, cfg.secrets())})
-        except (asyncio.CancelledError, GeneratorExit):
-            raise
-        except Exception as e:
-            log_error(traceback.format_exc(), cfg.secrets())
-            yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+                if e.kind in registry.HEALTH_KINDS:
+                    registry.mark(model.full_id, e.kind)
+                yield out({"error": redact(e.message, cfg.secrets())})
+                break
+            except (asyncio.CancelledError, GeneratorExit):
+                raise
+            except Exception as e:
+                log_error(traceback.format_exc(), cfg.secrets())
+                yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+                break
         saver.meta.update({k: done[k] for k in ("speed", "usage") if k in done})
         saver.write(final=True)
         finished = True

@@ -171,6 +171,7 @@ function renderPicker(){
     return `<li class="m ${k === pk ? 'on' : ''} ${cur ? 'cur' : ''} ${m.locked ? 'locked' : ''}" role="option" data-k="${k}">`
       + `<span class="n">${esc(m.label)}${!m.locked && m.label !== m.id ? `<span class="sub"> · ${esc(m.id)}</span>` : ''}</span>`
       + (m.locked && m.note ? `<span class="pnote">${esc(m.note)}</span>` : '')
+      + (m.issue ? `<span class="pnote warn" title="This model failed recently">${esc(m.issue)}</span>` : '')
       + (m.vision ? `<span title="Can see images">${ic('eye')}</span>` : '') + (m.think !== 'no' ? `<span title="Can think">${ic('bulb')}</span>` : '')
       + (m.locked ? `<span title="${m.local ? 'Not downloaded yet' : 'Needs a key'}">${ic('lock')}</span>`
                   : `<span class="badge ${m.local ? 'private' : 'cloud'}">${m.local ? 'Private' : 'Cloud'}</span>`)
@@ -198,7 +199,12 @@ function renderPicker(){
     }
     if (!ms.length && q) continue;
     const st = p.status === 'ok' ? '' : 'unavailable' + (p.message ? ' – ' + p.message : '');
-    html += `<li class="grp">${esc(p.label ? kindInfo(p.kind).name + ' · ' + p.label : kindInfo(p.kind).name)}<span class="pst">${esc(st)}</span></li>` + ms.map(m => item(m)).join('');
+    html += `<li class="grp">${esc(p.label ? kindInfo(p.kind).name + ' · ' + p.label : kindInfo(p.kind).name)}<span class="pst">${esc(st)}</span></li>`;
+    const pop = ms.filter(m => m.popular), rest = ms.filter(m => !m.popular);
+    html += pop.map(m => item(m)).join('');
+    if (pop.length && rest.length) html += `<li class="sub2">More ${esc(kindInfo(p.kind).name)} models</li>`;
+    html += rest.map(m => item(m)).join('');
+    if (!q) html += `<li class="addrow" data-addmodel="${esc(p.id)}" data-kind="${esc(p.kind)}">${ic('plus')}Add a model by name…</li>`;
   }
   // 2) popular models from providers you haven't connected yet
   let lockedHtml = '';
@@ -237,6 +243,8 @@ $('#pq').onkeydown = e => {
 $('#pl').onclick = e => {
   const add = e.target.closest('[data-addkey]');
   if (add){ closePicker(); return openSheet('models', add.dataset.addkey); }
+  const am = e.target.closest('[data-addmodel]');
+  if (am){ closePicker(); return openSheet('models', null, am.dataset.addmodel); }
   const li = e.target.closest('li.m'); if (li) pickModel(+li.dataset.k);
 };
 $('#prefresh').onclick = async () => { $('#prefresh').disabled = true; await refreshModels(true); $('#prefresh').disabled = false; };
@@ -804,6 +812,7 @@ async function ask(prompt, label, system, opt = {}){
   if (am.confirm) return shieldConfirm(conv, am, prompt, label, system, opt);
   repaint(am);
   setBusyUI(); refreshTitle(conv);
+  if (am.meta.error) refreshModels(); // so the picker can warn about a model that just failed
 }
 async function shieldConfirm(conv, am, prompt, label, system, opt){
   const i = conv.messages.indexOf(am); if (i >= 0) conv.messages.splice(i, 1);
@@ -1029,11 +1038,11 @@ const mono = k => { const n = kindInfo(k).name || k, w = n.replace(/[^A-Za-z ]/g
   return `<span class="mono" style="--h:${HUE[k] ?? 200}">${esc(t.length > 2 ? t.slice(0, 3) : t)}</span>`; };
 let SET = {providers: [], storage: 'keyring'};
 let openForm = null;
-function openSheet(tab = 'models', kind = null){
+function openSheet(tab = 'models', kind = null, addModelFor = null){
   closePicker(); closePal();
   $('#sheet').classList.add('on'); $('#scrim').classList.add('on');
   showTab(tab); openForm = kind;
-  loadSettings().then(() => { if (kind) focusForm(kind); });
+  loadSettings().then(() => { if (kind) focusForm(kind); if (addModelFor) openAddModel(addModelFor); });
 }
 function closeSheet(){ $('#sheet').classList.remove('on'); if (!$('#pal').classList.contains('on')) $('#scrim').classList.remove('on'); }
 function showTab(t){
@@ -1053,7 +1062,23 @@ function keyLine(p){
   return `<div class="pkey ${p.enabled ? '' : 'off'}" data-id="${esc(p.id)}"><span class="k">${esc(p.hint || '')}</span>`
     + `<span class="grow">${esc([p.label, src, st].filter(Boolean).join(' · '))}</span>`
     + (p.source === 'env' ? '' : `<button class="btn small ghost" data-tog="${esc(p.id)}">${p.enabled ? 'Turn off' : 'Turn on'}</button><button class="ib" data-del="${esc(p.id)}" title="Remove this key" aria-label="Remove this key">${ic('trash', 16)}</button>`)
-    + `</div>`;
+    + `</div>`
+    + (p.source === 'env' || !p.enabled ? '' : `<div class="xm" data-xm="${esc(p.id)}">`
+      + (p.extra_models || []).map(x => `<span class="xchip">${esc(x)}<button data-xdel="${esc(x)}" title="Remove" aria-label="Remove ${esc(x)}">${ic('x', 12)}</button></span>`).join('')
+      + `<button class="linkish" data-xadd="${esc(p.id)}">+ Add a model by name</button>`
+      + `<span class="xform" hidden><input class="fld" data-xin placeholder="Exact model id, e.g. gpt-6.2-sol" autocomplete="off" spellcheck="false"><button class="btn small" data-xsave="${esc(p.id)}">Add</button></span></div>`);
+}
+function openAddModel(pid){
+  const box = $(`.xm[data-xm="${CSS.escape(pid)}"]`); if (!box) return;
+  box.querySelector('[data-xadd]').hidden = true;
+  const f = box.querySelector('.xform'); f.hidden = false;
+  box.closest('.pcard').scrollIntoView({block:'nearest'});
+  f.querySelector('input').focus();
+}
+async function saveExtra(pid, list){
+  const r = await jpost('/api/providers/' + pid, {extra_models: list}, 'PATCH');
+  if (!r.ok){ toast(await errorOf(r)); return false; }
+  await refreshModels(true); await loadSettings(); return true;
 }
 function formHtml(k){
   const info = kindInfo(k), custom = k === 'custom';
@@ -1120,12 +1145,21 @@ async function saveKey(k){
     await refreshModels();
     const want = S.model && S.model.startsWith(k + ':') && S.models.find(m => m.full_id === j.provider.id + ':' + S.model.split(':').slice(1).join(':'));
     if (want) setModel(want.full_id);
-    else if ((!curInfo() || curInfo().locked) && j.models[0]) setModel(j.models[0].full_id);
+    else if (!curInfo() || curInfo().locked){ const mine = S.models.filter(m => m.provider === j.provider.id); const best = mine.find(m => m.popular && !m.issue) || mine.find(m => !m.issue) || mine[0]; if (best) setModel(best.full_id); }
     toast(`${j.provider.name} connected: ${j.models.length} models`);
     await loadSettings();
   } finally { btn.disabled = false; }
 }
 $('#provlist').addEventListener('click', async e => {
+  const x = e.target.closest('[data-xadd],[data-xsave],[data-xdel]');
+  if (x){
+    const pid = x.dataset.xadd || x.dataset.xsave || x.closest('[data-xm]').dataset.xm, p = SET.providers.find(q => q.id === pid);
+    if (x.dataset.xadd) return openAddModel(pid);
+    if (x.dataset.xdel) return saveExtra(pid, (p.extra_models || []).filter(m => m !== x.dataset.xdel));
+    const v = x.closest('.xform').querySelector('input').value.trim(); if (!v) return;
+    if (await saveExtra(pid, [...new Set([...(p.extra_models || []), v])])){ setModel(pid + ':' + v); toast(`${v} added`); }
+    return;
+  }
   const t = e.target.closest('[data-add],[data-save],[data-cancel],[data-tog],[data-del]'); if (!t) return;
   if (t.dataset.add){ openForm = t.dataset.add; focusForm(t.dataset.add); }
   else if (t.dataset.save) saveKey(t.dataset.save);
@@ -1133,7 +1167,10 @@ $('#provlist').addEventListener('click', async e => {
   else if (t.dataset.tog){ const p = SET.providers.find(x => x.id === t.dataset.tog); await jpost('/api/providers/' + p.id, {enabled: !p.enabled}, 'PATCH'); await refreshModels(); loadSettings(); }
   else if (t.dataset.del){ if (!confirm('Remove this key from Haven?')) return; await api('/api/providers/' + t.dataset.del, {method:'DELETE'}); await refreshModels(); loadSettings(); toast('Key removed'); }
 });
-$('#provlist').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pform input')){ e.preventDefault(); saveKey(e.target.closest('.pform').dataset.form); } });
+$('#provlist').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('.pform input')){ e.preventDefault(); saveKey(e.target.closest('.pform').dataset.form); }
+  if (e.key === 'Enter' && e.target.matches('[data-xin]')){ e.preventDefault(); e.target.closest('.xform').querySelector('[data-xsave]').click(); }
+});
 $('#provlocal').addEventListener('click', async e => { if (e.target.closest('[data-retry]')){ await refreshModels(true); loadSettings(); } });
 $('#shieldtg').onchange = () => setShield($('#shieldtg').checked);
 $('#addkey').onclick = addAnyKey;

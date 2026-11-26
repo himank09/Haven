@@ -274,7 +274,7 @@ def test_network_errors(live, hub, monkeypatch, base_url, expected):
 
 @pytest.mark.parametrize("exc,expected", [
     (httpx.ConnectTimeout("timed out"), "Can't reach OpenAI. Check internet."),
-    (httpx.ReadTimeout("timed out"), "Took too long. Try again."),
+    (httpx.ReadTimeout("timed out"), "Took too long: OpenAI didn't answer in time."),
     (httpx.ConnectError("[Errno 11001] getaddrinfo failed"), "Can't reach OpenAI. Check internet."),
 ])
 async def test_timeouts_and_dns_mapping(exc, expected):
@@ -285,7 +285,7 @@ async def test_timeouts_and_dns_mapping(exc, expected):
         with pytest.raises(base.ProviderError) as ei:
             async for _ in registry.ADAPTERS["openai"].stream_chat(cfg, model, [{"role": "user", "content": "hi"}], [], None, False):
                 pass
-    assert ei.value.message == expected
+    assert ei.value.message.startswith(expected)  # brief: timeout -> "Took too long"
     await base.close_clients()
 
 

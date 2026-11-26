@@ -328,7 +328,7 @@ def provider_view(e: dict, cfg) -> dict:
             "base_url": cfg.base_url if cfg.kind == "custom" or e.get("base_url") else "", "enabled": e.get("enabled", True),
             "hint": e.get("hint", ""), "source": e.get("storage", "keyring"), "local": False,
             "status": ("unavailable" if st.get("error") else "ok") if st else "unknown", "message": st.get("error", ""),
-            "model_count": len(st.get("models", []))}
+            "model_count": len(st.get("models", [])), "extra_models": list(e.get("extra_models") or [])}
 
 
 @app.get("/api/providers")

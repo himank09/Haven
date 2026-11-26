@@ -324,7 +324,8 @@ def test_empty_state_no_models_shows_onboarding(pg, live, hub, monkeypatch):
     assert pg.evaluate("window.__opened") == ["https://ollama.com/download"]
     pg.click("#ob-key")
     pg.wait_for_selector("#sheet.on")
-    pg.wait_for_function("document.activeElement.id === 'nkey'", timeout=2000)
+    pg.wait_for_selector('#provlist [data-add]')
+    assert pg.is_visible('.tabp[data-p=models]') and pg.locator('#provlist [data-add]').count() >= 10  # every provider has an Add key button
     assert pg.is_visible("#tiles")  # file tools still there
 
 
@@ -356,7 +357,7 @@ def test_contrast_of_key_text(browser, live, hub, scheme):
     assert bad == [], bad
 
 
-@pytest.mark.parametrize("w,h", [(800, 600), (1920, 1080)])
+@pytest.mark.parametrize("w,h", [(700, 600), (800, 600), (1920, 1080)])  # 800 = a 1200px window at 150% scaling
 def test_layout_sizes_no_overflow(browser, live, hub, w, h):
     ctx, pg = new_page(browser, live, w, h)
     open_app(pg, live)
@@ -369,7 +370,7 @@ def test_layout_sizes_no_overflow(browser, live, hub, w, h):
         if (document.documentElement.scrollWidth > W) out.push(['doc', document.documentElement.scrollWidth]);
         return out; }""")
     side = pg.evaluate("document.querySelector('#side').getBoundingClientRect().right")
-    if w < 900:
+    if w <= 760:  # narrow: the sidebar becomes a drawer
         assert side <= 0  # collapsed into a drawer
         pg.click("#b-side")
         time.sleep(0.4)

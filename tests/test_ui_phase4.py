@@ -103,6 +103,7 @@ def test_shield_toggle_hidden_for_local_and_persists(pg, live, hub):
     pg.wait_for_selector("html[data-ready='1']")
     assert pg.get_attribute("#shield", "aria-pressed") == "false"
     pg.click("#b-gear")
+    pg.click(".dlg .tab[data-tab=privacy]")
     assert not pg.is_checked("#shieldtg")
     pg.check("#shieldtg")
     time.sleep(0.2)
@@ -152,3 +153,72 @@ def test_declining_keeps_the_file_on_this_pc(pg, live, hub, tmp_path):
     assert hub["openai"].chat_requests() == []
     assert pg.locator("#thread > *").count() == 0
     assert pg.input_value("#input") == "Read my passport"  # put back so nothing is lost
+
+
+# ---------------- popular-model catalog, provider cards, add a model by name ----------------
+def test_locked_popular_model_explains_and_unlocks_after_adding_key(pg, live, hub):
+    hub["openai"].models = {"data": [{"id": "gpt-6.2-sol"}, {"id": "gpt-6.2-astra"}, {"id": "gpt-4o"}, {"id": "o4-mini"}]}
+    open_app(pg, live)
+    pg.click("#pill")
+    locked = pg.locator("#pl li.m.locked", has_text="GPT-6.2 Sol")
+    assert locked.count() == 1 and "Everyday default" in locked.inner_text()
+    locked.click()
+    pg.wait_for_selector("#notice:not([hidden])")
+    assert "GPT-6.2 Sol needs an OpenAI API key" in pg.inner_text("#notice")
+    assert "Needs key" in pg.inner_text("#pill")
+    send(pg, "hello")  # nothing is sent while the model is locked
+    assert pg.locator("#thread > *").count() == 0 and hub["openai"].chat_requests() == []
+    pg.click("#noticebtn")  # -> Settings, OpenAI card, key field open
+    pg.wait_for_selector(".pform[data-form=openai]:not([hidden])")
+    assert pg.evaluate("document.activeElement.dataset.f") == "key"
+    pg.fill(".pform[data-form=openai] [data-f=key]", K.OPENAI)
+    pg.click(".pform[data-form=openai] [data-save]")
+    pg.wait_for_selector(".pcard[data-kind=openai] .stat.ok")
+    assert "Connected" in pg.inner_text(".pcard[data-kind=openai]")
+    assert K.OPENAI not in pg.content()
+    pg.wait_for_function("document.querySelector('#pill').innerText.includes('Cloud')")
+    assert "GPT-6.2 Sol" in pg.inner_text("#pill")  # the model you picked is now unlocked and selected
+    pg.keyboard.press("Escape")
+    pg.click("#pill")
+    rows = pg.locator("#pl li.m:not(.locked)").all_inner_texts()
+    openai_rows = [r for r in rows if "gpt" in r.lower() or "o4" in r]
+    assert openai_rows[0].startswith("GPT-6.2 Astra") and openai_rows[1].startswith("GPT-6.2 Sol")  # popular first, friendly names
+    assert "More OpenAI models" in pg.inner_text("#pl")
+    assert pg.locator("#pl li.m.locked", has_text="GPT-6.2").count() == 0
+
+
+def test_add_a_model_by_name(pg, live, hub):
+    add_key(live, K.OPENAI)
+    open_app(pg, live)
+    pg.click("#pill")
+    pg.click("#pl [data-addmodel=openai]")
+    pg.wait_for_selector(".xm[data-xm=openai] .xform:not([hidden])")
+    pg.fill(".xm[data-xm=openai] [data-xin]", "my-finetune-v2")
+    pg.keyboard.press("Enter")
+    pg.wait_for_selector(".xm[data-xm=openai] .xchip:has-text('my-finetune-v2')")
+    assert "my-finetune-v2" in pg.inner_text("#pill")
+    hub["openai"].chunks = sse_openai(["custom model here"])
+    pg.keyboard.press("Escape")
+    send(pg, "hi")
+    wait_done(pg)
+    assert hub["openai"].chat_requests()[-1]["json"]["model"] == "my-finetune-v2"
+
+
+def test_failing_model_is_marked_in_picker(pg, live, hub, monkeypatch):
+    from haven import chat
+    from haven.providers import registry
+
+    monkeypatch.setattr(chat, "RETRY_BUSY_AFTER", 0.05)
+    registry.HEALTH.clear()
+    hub["openai"].models = {"data": [{"id": "gpt-6.2-sol"}, {"id": "gpt-6-luna"}]}
+    add_key(live, K.OPENAI)
+    open_app(pg, live)
+    pg.evaluate("setModel('openai:gpt-6.2-sol')")
+    hub["openai"].chat_status = 503
+    hub["openai"].chat_body = '{"error": {"message": "This model is currently experiencing high demand."}}'
+    send(pg, "hello")
+    wait_done(pg)
+    assert "overloaded right now" in pg.inner_text("#thread .a .body")
+    pg.click("#pill")
+    pg.wait_for_function("[...document.querySelectorAll('#pl li.m')].some(li => li.innerText.includes('gpt-6.2-sol') && li.innerText.includes('busy right now'))", timeout=3000)
+    registry.HEALTH.clear()

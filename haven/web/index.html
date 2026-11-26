@@ -160,6 +160,8 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .picker .more{padding:.5rem .7rem;font-size:.82rem;color:var(--ink-3)}
 .picker .sep{margin:.5rem .6rem .2rem;padding-top:.6rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--ink-2)}
 .picker li.m.locked .n{color:var(--ink-2)}
+.picker li.m .pnote.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent);border-radius:6px;padding:0 .4rem;font-size:.74rem;white-space:nowrap}
+.picker .sub2{padding:.45rem .6rem .15rem;font-size:.74rem;color:var(--ink-3)}
 .picker li.m.locked .pnote{font-size:.76rem;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
 .picker .grp .addk{margin-left:auto;height:24px;padding:0 .55rem;border-radius:7px;border:1px solid var(--line);background:var(--surface);font:600 .74rem var(--font);color:var(--brand-text);letter-spacing:0;text-transform:none;cursor:pointer}
 .picker .grp .addk:hover{border-color:var(--brand)}
@@ -424,6 +426,12 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 .pkey .k{font:600 .82rem var(--mono);color:var(--ink)}
 .pkey .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pkey.off{opacity:.6}
+.xm{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;padding:0 .9rem .6rem 3.85rem;font-size:.84rem}
+.xchip{display:inline-flex;align-items:center;gap:.2rem;height:24px;padding:0 .2rem 0 .55rem;border-radius:7px;background:var(--sunken);font:.78rem var(--mono)}
+.xchip button{width:20px;height:20px;border:0;background:none;color:var(--ink-3);display:grid;place-items:center;border-radius:5px}
+.xchip button:hover{background:var(--line);color:var(--ink)}
+.xform{display:inline-flex;gap:.35rem;align-items:center}
+.xform .fld{height:30px;width:260px}
 .pform{margin:0 .9rem .9rem 3.85rem;padding:.8rem;border-radius:12px;background:var(--sunken);display:grid;gap:.5rem}
 .pform .row{margin-top:0}
 .pform .msg{font-size:.84rem;color:var(--ink-2);min-height:1.1em}
