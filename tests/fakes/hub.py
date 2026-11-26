@@ -15,6 +15,7 @@ and inspect what Haven sent (`p.requests`) and whether the client hung up (`p.di
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import socket
 import threading
@@ -123,6 +124,15 @@ class Hub:
             if p.models_body is not None:
                 return Response(p.models_body, 200, media_type="application/json")
             return JSONResponse(p.models if p.models is not None else default_models(kind))
+        if ":generateContent" in rest:  # Gemini image models (non-streaming)
+            rec["kind"] = "image"
+            p.requests.append(rec)
+            if p.chat_status != 200:
+                return Response(p.chat_body or json.dumps({"error": {"message": f"fake error {p.chat_status}"}}),
+                                p.chat_status, media_type="application/json")
+            png = base64.b64encode(FAKE_PNG).decode()
+            return JSONResponse({"candidates": [{"content": {"parts": [{"text": "Here you go."},
+                                 {"inlineData": {"mimeType": "image/png", "data": png}}]}, "finishReason": "STOP"}]})
         if rest.endswith("/chat/completions") or rest.endswith("/messages") or ":streamGenerateContent" in rest \
                 or rest.endswith("/api/chat"):
             rec["kind"] = "chat"
@@ -186,6 +196,9 @@ class Hub:
         if self.server:
             self.server.should_exit = True
             self.thread.join(5)
+
+
+FAKE_PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000""1f15c4890000000d49444154789c6360f8cf00000301010018dd8db00000000049454e44ae426082")
 
 
 def default_models(kind: str):

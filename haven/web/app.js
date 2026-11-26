@@ -41,6 +41,7 @@ const P = {
   rotate:'<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   topdf:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/>',
   text:'<path d="M4 7V5h16v2M9 19h6M12 5v14"/>', spark:'<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z"/><path d="M19 3v4M17 5h4"/>',
+  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
   bulb:'<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
   copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   save:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -69,6 +70,7 @@ $('#mark').innerHTML = archW(16); $('#heroarch').innerHTML = archW(32); $('#drop
  ['#b-side','side'],['#b-side-close','side'],['#ic-new','plus'],['#ic-cq','search'],['#ic-pq','search'],['#pillchev','chev'],['#tobottom','down'],
  ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield'],['#ic-about','info'],['#r-open','side'],['#r-new','edit'],['#r-search','search'],['#r-recent','chats'],['#ic-prof','user'],['#me-gear','gear']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
 $('#think').innerHTML = ic('bulb') + 'Think';
+$('#imgmode').innerHTML = ic('image') + 'Image';
 $('#send').innerHTML = ic('up');
 
 /* ===================== state ===================== */
@@ -678,6 +680,7 @@ function paintAssistant(el, m){
     const tx = d.querySelector('.tx'); if (tx._v !== m.thinking.length){ tx._v = m.thinking.length; tx.textContent = unmask(m.thinking, mt.unmask); }
   } else if (tb.innerHTML) tb.innerHTML = '';
   const body = el.querySelector('.body');
+  paintPics(el, body, mt.images || []);
   body.classList.toggle('errtxt', !!mt.error);
   body.classList.toggle('live-caret', live && !!m.content);
   const text = display(m);
@@ -691,6 +694,38 @@ function paintAssistant(el, m){
       + (isLastAssistant(m) ? `<button class="chipbtn" data-act="regen">${ic('regen')}Regenerate</button>` : '')
       + `<button class="chipbtn" data-act="save">${ic('save')}Save</button><span class="meta">${esc(metaLine(m))}</span>`;
   }
+}
+const picURLs = new Map();
+async function picURL(name){
+  if (!picURLs.has(name)) picURLs.set(name, api('/api/images/' + encodeURIComponent(name)).then(r => r.ok ? r.blob() : Promise.reject()).then(b => URL.createObjectURL(b)));
+  return picURLs.get(name);
+}
+function paintPics(el, body, names){
+  let box = el.querySelector('.pics');
+  const sig = names.join('|');
+  if (!names.length){ if (box) box.remove(); return; }
+  if (box && box._v === sig) return;
+  if (!box){ box = document.createElement('div'); box.className = 'pics'; body.before(box); }
+  box._v = sig;
+  box.innerHTML = names.map(n => `<figure class="pic" data-pic="${esc(n)}"><img alt="Generated image"><figcaption>`
+    + `<button class="chipbtn" data-pact="save">${ic('save')}Save</button><button class="chipbtn" data-pact="copy">${ic('copy')}Copy</button></figcaption></figure>`).join('');
+  box.querySelectorAll('.pic').forEach(f => picURL(f.dataset.pic).then(u => { f.querySelector('img').src = u; }).catch(() => { f.querySelector('img').alt = 'Image file is missing'; }));
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-pact]'); if (!b) return;
+  const name = b.closest('.pic').dataset.pic, blob = await (await fetch(await picURL(name))).blob();
+  if (b.dataset.pact === 'copy'){
+    try{ const png = blob.type === 'image/png' ? blob : await toPng(blob); await navigator.clipboard.write([new ClipboardItem({'image/png': png})]); toast('Image copied'); }
+    catch{ toast('Copying images is not supported here; use Save'); }
+  } else {
+    const fname = 'haven-image.' + (name.split('.').pop() || 'png');
+    if (desktop()){ const b64 = await readB64(blob); const r = await window.pywebview.api.save_b64(fname, b64); if (r && r.path) toast('Saved'); }
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; a.click(); }
+  }
+});
+async function toPng(blob){
+  const img = await createImageBitmap(blob), c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  c.getContext('2d').drawImage(img, 0, 0); return new Promise(ok => c.toBlob(ok, 'image/png'));
 }
 function isLastAssistant(m){ const ms = S.conv ? S.conv.messages : []; return ms.length && ms[ms.length - 1] === m && m.role === 'assistant'; }
 function markLast(){ $$('#thread .a.last').forEach(x => x.classList.remove('last')); const l = $('#thread > :last-child'); if (l && l.classList.contains('a')) l.classList.add('last'); }
@@ -799,11 +834,11 @@ function useModel(id){ S.recent = [id, ...S.recent.filter(x => x !== id)].slice(
 
 async function ask(prompt, label, system, opt = {}){
   if (liveHere()) return;
-  const info = curInfo();
-  if (!S.model || !info){ if (S.modelsLoaded && !S.models.length && !S.catalog.length){ toast('No model yet. Start Ollama or add a key in Settings.'); return; } updateNotice(); openPicker(); return; }
-  if (info.locked){ updateNotice(); $('#notice').animate([{transform:'translateX(-6px)'}, {transform:'translateX(6px)'}, {transform:'none'}], {duration:240}); return; }
+  const info = curInfo(), img = !!opt.image;
+  if (!img && (!S.model || !info)){ if (S.modelsLoaded && !S.models.length && !S.catalog.length){ toast('No model yet. Start Ollama or add a key in Settings.'); return; } updateNotice(); openPicker(); return; }
+  if (!img && info.locked){ updateNotice(); $('#notice').animate([{transform:'translateX(-6px)'}, {transform:'translateX(6px)'}, {transform:'none'}], {duration:240}); return; }
   let atts = [];
-  try{ atts = await attachments(); }catch(e){ toast(e.message); return; }
+  try{ if (!img) atts = await attachments(); }catch(e){ toast(e.message); return; }
   const conv = await ensureConv();
   if (!opt.regen){
     const um = {id: uid(), role:'user', content: label || prompt, model:'', created: Date.now() / 1000,
@@ -812,14 +847,14 @@ async function ask(prompt, label, system, opt = {}){
     if (!conv.title) refreshTitle(conv); // the sidebar shows the real title straight away
   }
   const hist = historyOf(conv);
-  const am = {id: uid(), role:'assistant', content:'', thinking:'', model: S.model, meta: {notes: []}, live: 1, created: Date.now() / 1000};
+  const am = {id: uid(), role:'assistant', content:'', thinking:'', model: img ? '' : S.model, meta: {notes: [], image: img || undefined}, live: 1, created: Date.now() / 1000};
   appendMsg(conv, am);
   const ctrl = new AbortController(); S.live.set(conv.id, {ctrl, msg: am});
-  useModel(S.model); setBusyUI(); renderSide();
+  if (!img) useModel(S.model); setBusyUI(); renderSide();
   const t0 = performance.now();
   let httpFailed = false;
   try{
-    await stream({model: S.model, think: thinking(), files: atts, messages: hist, system, whole: !!opt.whole, shield_ok: !!S.shieldOk[conv.id],
+    await stream({model: S.model, image: img, think: thinking(), files: atts, messages: hist, system, whole: !!opt.whole, shield_ok: !!S.shieldOk[conv.id],
                   save: {conversation_id: conv.id, message_id: am.id}}, j => {
       if (j.confirm){ am.confirm = j.confirm; return; }
       if (j.docs){ am.meta.pages = j.docs.pages; am.meta.previews = j.docs.previews; }
@@ -828,6 +863,8 @@ async function ask(prompt, label, system, opt = {}){
       if (j.note) am.meta.notes.push(j.note);
       if (j.thinking) am.thinking += j.thinking;
       if (j.content) am.content += j.content;
+      if (j.image) (am.meta.images = am.meta.images || []).push(j.image);
+      if (j.model) am.model = j.model;
       if (j.done){ if (j.speed) am.meta.speed = j.speed; if (j.usage) am.meta.usage = j.usage; }
       schedule(am);
     }, ctrl.signal);
@@ -878,7 +915,7 @@ async function regenerate(m){
   conv.messages.splice(i);
   $(`#thread > [data-id="${CSS.escape(m.id)}"]`)?.remove();
   const mt = lastUser.meta || {};
-  ask(mt.prompt || lastUser.content, null, mt.system, {regen: true});
+  ask(mt.prompt || lastUser.content, null, mt.system, {regen: true, image: !!(m.meta || {}).image});
 }
 function startEdit(m){
   if (liveHere()) return;
@@ -975,8 +1012,13 @@ async function submit(){
       S.conv.messages.splice(i); renderThread();
     }
   }
-  ask(t);
+  let image = imageMode();
+  if (!image && IMAGE_ASK.test(t) && !files.length) image = confirm('This looks like a request for a picture. Make an image with Google Gemini?\n\nOK = make an image · Cancel = answer in text');
+  ask(t, null, undefined, {image});
 }
+const IMAGE_ASK = /^\s*(please\s+)?(can you\s+|could you\s+)?(draw|paint|sketch|illustrate|(generate|create|make|design|render)\s+(me\s+)?(an?\s+|the\s+|some\s+)?(\w+\s+){0,3}(image|picture|pic|photo|drawing|illustration|logo|icon|wallpaper|poster|art(work)?))\b/i;
+const imageMode = () => $('#imgmode').getAttribute('aria-pressed') === 'true';
+$('#imgmode').onclick = () => { const on = !imageMode(); $('#imgmode').setAttribute('aria-pressed', String(on)); $('#input').placeholder = on ? 'Describe the picture to make' : 'Ask something, or drop a file here'; };
 $('#think').setAttribute('aria-pressed', String(store.get('think', false)));
 $('#think').onclick = () => { const on = $('#think').getAttribute('aria-pressed') !== 'true'; $('#think').setAttribute('aria-pressed', String(on)); store.set('think', on); };
 

@@ -124,6 +124,13 @@ def main():
             server.RESULTS[rid] = (name, text.encode("utf-8"))
             return self.save_result(rid)
 
+        def save_b64(self, name, data):
+            import base64
+
+            rid = secrets.token_hex(8)
+            server.RESULTS[rid] = (name, base64.b64decode(data))
+            return self.save_result(rid)
+
         def open_url(self, url):
             import webbrowser
 

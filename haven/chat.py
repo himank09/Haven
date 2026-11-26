@@ -332,3 +332,59 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
     finally:
         if not finished:  # stopped by the user (or the window closed): keep what arrived
             saver.write(final=True, stopped=True)
+
+
+async def image_stream(payload: dict) -> AsyncIterator[str]:
+    """Make a picture with a Gemini image model. Same NDJSON contract plus {"image": "<file name>"}."""
+    from haven import images
+
+    prompt = next((m.get("content", "") for m in reversed(payload.get("messages") or []) if m.get("role") == "user"), "").strip()
+    gem = next((c for _e, c in registry.configured() if c.kind == "gemini"), None)
+    saver = Saver(payload.get("save"), "")
+    finished = False
+
+    def out(ev: dict) -> str:
+        saver.add(ev)
+        if "image" in ev:
+            saver.meta.setdefault("images", []).append(ev["image"])
+        return json.dumps(ev, ensure_ascii=False) + "\n"
+
+    try:
+        if not gem:
+            yield out({"error": "Making images needs a Google Gemini key. Add one in Settings → Providers."})
+        elif not prompt:
+            yield out({"error": "Describe the picture you want."})
+        else:
+            saver.write(final=False)
+            sent = prompt
+            if shield_enabled():
+                sh = Shield()
+                sent = sh.mask(prompt)
+                summary = sh.summary(gem.name)
+                if summary:
+                    yield out({"note": summary})
+            try:
+                names = await images.image_models(gem)
+                if not names:
+                    raise ProviderError("This Gemini key can't see any image models.", 404, "not_found")
+                model = payload.get("image_model") if payload.get("image_model") in names else names[0]
+                saver.model = f"{gem.id}:{model}"
+                pics, text = await images.generate(gem, model, sent, str(payload.get("aspect") or ""))
+                if not pics:
+                    raise ProviderError("Gemini answered without a picture. Try describing it differently.", 0, "server")
+                for data, mime in pics:
+                    yield out({"image": await asyncio.to_thread(images.save, data, mime)})
+                if text:
+                    yield out({"content": text})
+                yield out({"note": f"Made with {model}. Google adds an invisible SynthID watermark."})
+            except ProviderError as e:
+                yield out({"error": redact(e.message, gem.secrets())})
+            except Exception as e:
+                log_error(traceback.format_exc(), gem.secrets())
+                yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+        saver.write(final=True)
+        finished = True
+        yield json.dumps({"done": True, "model": saver.model}) + "\n"
+    finally:
+        if not finished:
+            saver.write(final=True, stopped=True)

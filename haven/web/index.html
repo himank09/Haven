@@ -363,6 +363,7 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .tg:hover{border-color:var(--line-2);color:var(--ink)}
 .tg[aria-pressed="true"]{border-color:transparent;background:var(--t-ai-bg);color:var(--t-ai)}
 .tg:disabled{cursor:default;opacity:.8}
+.pics{display:flex;flex-wrap:wrap;gap:.6rem;margin:.2rem 0 .6rem}.pic{margin:0;max-width:min(100%,520px)}.pic img{display:block;max-width:100%;border-radius:12px;border:1px solid var(--line);background:var(--line)}.pic figcaption{display:flex;gap:.3rem;margin-top:.35rem}
 .tg svg{width:15px;height:15px}
 .tg.shield[aria-pressed="true"]{border-color:transparent;background:var(--t-conv-bg);color:var(--t-conv)}
 .tg.shield[aria-pressed="false"]{color:var(--warn)}
@@ -616,6 +617,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
             <div class="crow">
               <button class="ib" id="b-attach" title="Add files"></button>
               <button class="tg" id="think" aria-pressed="false" title="Think it through first (slower)"></button>
+              <button class="tg" id="imgmode" aria-pressed="false" title="Make a picture with Google Gemini"></button>
               <button class="tg shield" id="shield" aria-pressed="true" hidden></button>
               <span class="sp"></span>
               <button class="send" id="send" title="Send (Enter)" disabled></button>

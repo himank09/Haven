@@ -511,8 +511,19 @@ def conv_truncate(cid: str, payload: dict):
 # ---------------- AI ----------------
 @app.post("/api/chat")
 async def chat_endpoint(payload: dict):
+    if payload.get("image"):
+        return chat.LiveStream(chat.image_stream(payload), media_type="application/x-ndjson")
     cfg, model = await chat.resolve_or_400(payload.get("model", ""))
     return chat.LiveStream(chat.stream(cfg, model, payload), media_type="application/x-ndjson")
+
+
+@app.get("/api/images/{name}")
+def image_file(name: str):
+    from haven import images
+    p = images.path_of(name)
+    if not p:
+        raise HTTPException(404, "Image not found")
+    return FileResponse(p, headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.post("/api/unload")
