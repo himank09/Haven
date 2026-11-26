@@ -1,0 +1,17 @@
+"""Fake API keys used by the tests. The final grep test makes sure none of them ends up in any written file."""
+OPENAI = "sk-proj-TESTKEYopenai0000000000000001"
+SK_AMBIG = "sk-TESTKEYambiguous000000000000002"
+ANTHROPIC = "sk-ant-api03-TESTKEYanthropic000000003"
+GEMINI = "AIzaTESTKEYgemini00000000000000004"
+OPENROUTER = "sk-or-v1-TESTKEYopenrouter0000000005"
+GROQ = "gsk_TESTKEYgroq0000000000000000006"
+XAI = "xai-TESTKEYxai00000000000000000007"
+FIREWORKS = "fw_TESTKEYfireworks0000000000008"
+CEREBRAS = "csk-TESTKEYcerebras000000000000009"
+HF = "hf_TESTKEYhuggingface00000000000010"
+PLAIN = "TESTKEYplainnoprefix00000000000011"
+CUSTOM = "TESTKEYcustomgateway0000000000012"
+ECHOED = "sk-proj-TESTKEYechoed000000000000013"
+
+ALL = [OPENAI, SK_AMBIG, ANTHROPIC, GEMINI, OPENROUTER, GROQ, XAI, FIREWORKS, CEREBRAS, HF, PLAIN, CUSTOM, ECHOED]
+FALLBACK_ONLY = "sk-proj-TESTKEYfallbackfile0000000099"  # deliberately written to a plain file in its own temp dir
