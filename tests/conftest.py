@@ -48,9 +48,10 @@ from tests.fakes.hub import KINDS, Hub  # noqa: E402
 
 HUB = Hub()
 HUB.start()
-for _k in KINDS:
-    if _k != "custom":
-        os.environ[f"HAVEN_BASE_{_k.upper()}"] = HUB.url(_k)
+if not os.environ.get("HAVEN_RUN_LIVE"):  # the live smoke test talks to the real providers
+    for _k in KINDS:
+        if _k != "custom":
+            os.environ[f"HAVEN_BASE_{_k.upper()}"] = HUB.url(_k)
 
 import pytest  # noqa: E402
 

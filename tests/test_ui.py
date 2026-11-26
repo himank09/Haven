@@ -480,16 +480,23 @@ def test_huge_single_line_wraps_without_freezing(pg, live, hub):
     open_app(pg, live)
     big = "x" * 1_000_000
     hub["ollama"].chunks = ndjson_ollama([big[i:i + 50_000] for i in range(0, len(big), 50_000)])
+    pg.evaluate("window.__long = []; new PerformanceObserver(l => l.getEntries().forEach(e => __long.push(e.duration))).observe({entryTypes: ['longtask']})")
     t0 = time.monotonic()
     send(pg, "huge")
-    wait_done(pg, 30000)
+    # really finished: the saved answer holds all 1,000,000 characters and the page has drawn it
+    pg.wait_for_function("(() => { const m = haven.conv && haven.conv.messages.find(x => x.role === 'assistant');"
+                         " return m && !m.live && m.content.length === 1000000 && document.querySelector('#thread .a .longmore'); })()", timeout=30000)
     took = time.monotonic() - t0
     t1 = time.monotonic()
     assert pg.evaluate("1 + 1") == 2
     responsive = time.monotonic() - t1
     over = pg.evaluate("document.documentElement.scrollWidth - innerWidth")
-    print(f"\n1 MB single line: rendered in {took:.2f}s, page answered in {responsive * 1000:.0f} ms")
+    longest = max(pg.evaluate("window.__long") or [0])
+    print(f"\n1 MB single line: rendered in {took:.2f}s, longest main-thread block {longest:.0f} ms, page answered in {responsive * 1000:.0f} ms")
     assert over <= 0 and responsive < 1 and took < 15
+    assert longest < 1000  # no freeze while it renders
+    pg.click("#thread .a [data-act=copy]")
+    assert len(pg.evaluate("navigator.clipboard.readText()")) == 1_000_000  # Copy still gets everything
 
 
 def test_html_in_conversation_title_is_escaped(pg, live, hub):

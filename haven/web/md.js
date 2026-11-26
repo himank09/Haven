@@ -179,10 +179,21 @@
     });
   }
 
+  // Runs of 1,000+ characters with no spaces (base64, minified code, garbage) can't be wrapped cheaply:
+  // the browser would spend seconds on line breaking. Show them in a horizontally scrolling box instead,
+  // and only the first LONG_SHOW characters of a gigantic run (Copy still copies the full text).
+  const LONG = 1000, LONG_SHOW = 20000;
+  function longRun(r) {
+    const shown = r.length > LONG_SHOW ? r.slice(0, LONG_SHOW) : r;
+    const more = r.length - shown.length;
+    return `<span class="longrun">${esc(shown)}</span>` + (more ? `<span class="longmore">… ${more.toLocaleString()} more characters (Copy gets all of it)</span>` : '');
+  }
+
   function inline(s, o) {
     s = String(s).replace(/\u0000/g, '');
     const keep = [];
     const put = html => { keep.push(html); return P0 + (keep.length - 1) + P0; };
+    if (s.length >= LONG) s = s.replace(/\S{1000,}/g, r => /^https?:\/\//.test(r) && r.length < 2000 ? r : put(longRun(r)));
     s = s.replace(/(`+)([^`\n]+?)\1/g, (_, _t, c) => put(`<code>${esc(c)}</code>`));
     s = s.replace(/!\[([^\]\n]{0,300})\]\(([^()\s]{1,2000})(?:\s+"[^"\n]*")?\)/g, (_, alt) => put(`<span class="img-alt">[image${alt ? ': ' + esc(alt) : ''}]</span>`));
     s = s.replace(/\[([^\]\n]{1,500})\]\(([^()\s]{1,2000})(?:\s+"[^"\n]*")?\)/g, (_, t, u) => put(link(t, u, o)));

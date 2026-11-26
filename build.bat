@@ -12,6 +12,7 @@ if not exist ".venv\Scripts\python.exe" (
   --add-data "haven\web;haven\web" --add-data "assets;assets" ^
   --collect-all pypdfium2 --collect-all pillow_heif --collect-all webview --collect-all imageio_ffmpeg ^
   --collect-submodules uvicorn --hidden-import clr ^
+  --collect-submodules keyring --copy-metadata keyring --hidden-import keyring.backends.Windows --collect-submodules win32ctypes ^
   app.py
 if errorlevel 1 (
   echo Build failed.
