@@ -343,6 +343,7 @@ class ThinkSplitter:
 # ---------------- http clients ----------------
 
 _CLIENTS: Dict[Tuple[int, bool], httpx.AsyncClient] = {}
+_LOOPS: Dict[Tuple[int, bool], "weakref.ref"] = {}
 LIMITS = httpx.Limits(max_connections=32, max_keepalive_connections=8, keepalive_expiry=30)
 
 
@@ -353,13 +354,20 @@ def timeouts(local: bool) -> httpx.Timeout:
 
 
 def client(local: bool = False) -> httpx.AsyncClient:
-    """One shared client per event loop and kind (local/cloud), so connections are pooled and countable."""
+    """One shared client per event loop and kind (local/cloud), so connections are pooled and countable.
+
+    The loop is checked by identity (weak reference), not just id(): a new loop can reuse a dead loop's
+    address, and a client bound to a closed loop must never be handed out."""
+    import weakref
+
     loop = asyncio.get_running_loop()
     key = (id(loop), local)
     c = _CLIENTS.get(key)
-    if c is None or c.is_closed:
+    ref = _LOOPS.get(key)
+    if c is None or c.is_closed or ref is None or ref() is not loop:
         c = httpx.AsyncClient(timeout=timeouts(local), limits=LIMITS, follow_redirects=False)
         _CLIENTS[key] = c
+        _LOOPS[key] = weakref.ref(loop)
     return c
 
 

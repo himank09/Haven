@@ -33,8 +33,8 @@ def setup(live, style):
     return model
 
 
-def chat(live, model, messages=None, files=None, think=False, system=None, timeout=60):
-    body = {"model": model, "messages": messages or [{"role": "user", "content": "hi"}], "think": think}
+def chat(live, model, messages=None, files=None, think=False, system=None, timeout=60, shield_ok=False):
+    body = {"model": model, "messages": messages or [{"role": "user", "content": "hi"}], "think": think, "shield_ok": shield_ok}
     if files:
         body["files"] = files
     if system:
@@ -57,7 +57,7 @@ def check_contract(events):
     assert events[-1].get("done") is True, events[-3:]
     assert sum(1 for e in events if e.get("done")) == 1
     for e in events:
-        assert set(e) <= {"content", "thinking", "note", "error", "done", "speed", "usage"}, e
+        assert set(e) <= {"content", "thinking", "note", "error", "done", "speed", "usage", "unmask", "docs", "confirm"}, e
 
 
 # ---------------- normal streams ----------------
@@ -477,8 +477,9 @@ def test_vision_model_gets_image_in_provider_format(live, hub, style):
     model = setup(live, style)
     model = {"openai": "openai:gpt-4o", "ollama": "ollama:llava:7b"}.get(style, model)
     hub[style].chunks = stream_for(style, ["a red square"])
-    ev = chat(live, model, files=[{**IMG, "data": png_b64()}], messages=[{"role": "user", "content": "what is this?"}])
-    assert text(ev) == "a red square" and not any("note" in e for e in ev)
+    # shield_ok: the user already said "send anyway" for images to the cloud (§8.6 covers asking)
+    ev = chat(live, model, files=[{**IMG, "data": png_b64()}], messages=[{"role": "user", "content": "what is this?"}], shield_ok=True)
+    assert text(ev) == "a red square" and not any("can't see images" in e.get("note", "") for e in ev)
     req = hub[style].chat_requests()[-1]["json"]
     if style == "openai":
         parts = req["messages"][-1]["content"]
@@ -498,7 +499,7 @@ def test_vision_model_gets_image_in_provider_format(live, hub, style):
 def test_non_vision_model_with_image_gets_a_note(live, hub, style):
     model = setup(live, style)
     hub[style].chunks = stream_for(style, ["no image seen"])
-    ev = chat(live, model, files=[{**IMG, "data": png_b64()}])
+    ev = chat(live, model, files=[{**IMG, "data": png_b64()}], shield_ok=True)
     check_contract(ev)
     notes = [e["note"] for e in ev if "note" in e]
     assert any("can't see images" in n for n in notes)

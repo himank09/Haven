@@ -187,9 +187,12 @@ def test_ollama_appears_after_one_poll(client, hub, monkeypatch):
     hub["ollama"].show = {"qwen3:4b": {"capabilities": ["completion", "thinking"], "model_info": {"qwen3.context_length": 40960}}}
     monkeypatch.setattr(registry, "LOCAL_POLL", 0.05)
 
-    async def one_poll_cycle():
+    async def one_poll_cycle():  # let the real poll loop run until it has completed a poll (max 3 s)
         task = asyncio.ensure_future(registry.poll_forever())
-        await asyncio.sleep(0.3)
+        for _ in range(60):
+            await asyncio.sleep(0.05)
+            if registry.CACHE.local.get("ollama", {}).get("ok"):
+                break
         task.cancel()
 
     asyncio.run(one_poll_cycle())

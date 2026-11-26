@@ -55,14 +55,16 @@ const P = {
   side:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>', chev:'<path d="m6 9 6 6 6-6"/>', down:'<path d="M12 5v14M6 13l6 6 6-6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>', regen:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
   key:'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M15 8l2 2"/>', lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
-  dl:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>'
+  dl:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  shield:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  shieldoff:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="M4 4l16 16"/>'
 };
 const ic = (n, s) => `<svg class="i" viewBox="0 0 24 24"${s ? ` style="width:${s}px;height:${s}px"` : ''} aria-hidden="true">${P[n] || ''}</svg>`;
 const archW = s => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M13 3v5h5v2"/><path d="M8.5 11.5h5M8.5 15h2.5"/><path d="M17.5 13.2l1.15 3.15 3.15 1.15-3.15 1.15-1.15 3.15-1.15-3.15-3.15-1.15 3.15-1.15z" fill="#fff" stroke-width="1.2"/></svg>`;
 $('#mark').innerHTML = archW(16); $('#heroarch').innerHTML = archW(32); $('#droparch').innerHTML = archW(28);
 [['#b-search','search'],['#b-gear','gear'],['#b-attach','clip'],['#b-close','x'],['#palicon','search'],['#ic-keys','key'],['#ic-ext','puzzle'],
  ['#b-side','side'],['#b-side-close','side'],['#ic-new','plus'],['#ic-cq','search'],['#ic-pq','search'],['#pillchev','chev'],['#tobottom','down'],
- ['#ic-editing','edit'],['#b-new','edit']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
+ ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
 $('#think').innerHTML = ic('bulb') + 'Think';
 $('#send').innerHTML = ic('up');
 
@@ -71,6 +73,7 @@ const S = {
   models: [], providers: [], modelsLoaded: false,
   model: store.get('model2', ''), recent: store.get('recentModels', []),
   convs: [], conv: null, live: new Map(), editing: null, stick: true, gen: 0,
+  shield: true, shieldOk: store.get('shieldOk', {}),
 };
 window.haven = S; // handy in DevTools (and for the UI tests)
 const minfo = id => S.models.find(m => m.full_id === id);
@@ -98,10 +101,25 @@ function paintModel(){
   const p = m && provOf(m.provider);
   $('#foot').classList.toggle('cloud', !!m && !m.local);
   $('#foottxt').textContent = !m ? 'No model selected' : m.local ? 'Running on this laptop' : `Using ${p ? p.name : 'a cloud model'}, so messages and files go there`;
+  paintShield();
   const th = $('#think');
   th.hidden = !m || m.think === 'no';
   th.title = m && m.think === 'always' ? 'This model always thinks. On: show its thinking.' : 'Think it through first (slower)';
   updateNotice(); paintEmpty();
+}
+function paintShield(){
+  const b = $('#shield'), m = curInfo();
+  b.hidden = !m || m.local;
+  b.setAttribute('aria-pressed', String(S.shield));
+  b.innerHTML = ic(S.shield ? 'shield' : 'shieldoff') + (S.shield ? 'Shield on' : 'Shield off');
+  b.title = S.shield ? 'Privacy Shield is on: phone numbers, emails, PAN, Aadhaar, card and bank details are hidden before sending to the cloud'
+                     : 'Privacy Shield is off: messages go to the cloud as written';
+  const t = $('#shieldtg'); if (t) t.checked = S.shield;
+}
+async function setShield(on){
+  S.shield = on; paintShield();
+  try{ await jpost('/api/settings', {shield: on}); }catch{}
+  toast(on ? 'Privacy Shield on' : 'Privacy Shield off');
 }
 function updateNotice(){
   const n = $('#notice');
@@ -502,7 +520,15 @@ scrollEl.addEventListener('scroll', () => {
 $('#tobottom').onclick = toBottom;
 
 function mdOpts(m){ return {pages: (m.meta && m.meta.pages) || 0}; }
-function display(m){ return m.content || ''; }   // Phase 4 swaps Privacy Shield placeholders back here
+/* Privacy Shield: the model saw [PHONE_1]; the page shows (and copies) the real value. Tolerates [PHONE 1], PHONE_1, [phone-1]. */
+const PH_RE = /(?:\[\s*)?\b(EMAIL|UPI|CARD|AADHAAR|PAN|IFSC|PHONE)[ _-]?(\d{1,4})\b(?:\s*\])?/gi;
+function unmask(text, map){
+  if (!text || !map) return text || '';
+  const canon = {};
+  for (const [k, v] of Object.entries(map)) canon[k.replace(/[\[\]]/g, '').toUpperCase()] = v;
+  return text.replace(PH_RE, (all, kind, n) => canon[kind.toUpperCase() + '_' + n] ?? all);
+}
+function display(m){ return unmask(m.content || '', m.meta && m.meta.unmask); }
 function paintMd(box, text, opts){
   const blocks = MD.split(text), prev = box._b || [];
   for (let i = 0; i < blocks.length; i++){
@@ -563,7 +589,7 @@ function paintAssistant(el, m){
     if (!d){ tb.innerHTML = `<details class="th"><summary></summary><div class="tx"></div></details>`; d = tb.querySelector('details'); if (live) d.open = true; }
     const lbl = live && !m.content ? 'Thinking…' : 'Thought process';
     const s = d.querySelector('summary'); if (s._v !== lbl){ const was = s._v; s._v = lbl; s.innerHTML = ic('bulb', 14) + lbl; if (was === 'Thinking…' && m.content) d.open = false; } // fold away once the answer starts
-    const tx = d.querySelector('.tx'); if (tx._v !== m.thinking.length){ tx._v = m.thinking.length; tx.textContent = m.thinking; }
+    const tx = d.querySelector('.tx'); if (tx._v !== m.thinking.length){ tx._v = m.thinking.length; tx.textContent = unmask(m.thinking, mt.unmask); }
   } else if (tb.innerHTML) tb.innerHTML = '';
   const body = el.querySelector('.body');
   body.classList.toggle('errtxt', !!mt.error);
@@ -705,7 +731,11 @@ async function ask(prompt, label, system, opt = {}){
   const t0 = performance.now();
   let httpFailed = false;
   try{
-    await stream({model: S.model, think: thinking(), files: atts, messages: hist, system, save: {conversation_id: conv.id, message_id: am.id}}, j => {
+    await stream({model: S.model, think: thinking(), files: atts, messages: hist, system, whole: !!opt.whole, shield_ok: !!S.shieldOk[conv.id],
+                  save: {conversation_id: conv.id, message_id: am.id}}, j => {
+      if (j.confirm){ am.confirm = j.confirm; return; }
+      if (j.docs){ am.meta.pages = j.docs.pages; am.meta.previews = j.docs.previews; }
+      if (j.unmask) am.meta.unmask = {...(am.meta.unmask || {}), ...j.unmask};
       if (j.error){ am.content += (am.content ? '\n\n' : '') + j.error; am.meta.error = true; }
       if (j.note) am.meta.notes.push(j.note);
       if (j.thinking) am.thinking += j.thinking;
@@ -721,8 +751,29 @@ async function ask(prompt, label, system, opt = {}){
   am.live = 0;
   if (S.live.get(conv.id) && S.live.get(conv.id).msg === am) S.live.delete(conv.id);
   if (httpFailed) saveMsg(conv, am); // the server never started, so it saved nothing
-  cancelAnimationFrame(raf); raf = 0; dirty.clear(); repaint(am);
+  cancelAnimationFrame(raf); raf = 0; dirty.clear();
+  if (am.confirm) return shieldConfirm(conv, am, prompt, label, system, opt);
+  repaint(am);
   setBusyUI(); refreshTitle(conv);
+}
+async function shieldConfirm(conv, am, prompt, label, system, opt){
+  const i = conv.messages.indexOf(am); if (i >= 0) conv.messages.splice(i, 1);
+  $(`#thread > [data-id="${CSS.escape(am.id)}"]`)?.remove();
+  setBusyUI();
+  if (confirm(am.confirm)){
+    S.shieldOk[conv.id] = true; store.set('shieldOk', S.shieldOk);
+    return ask(prompt, label, system, {...opt, regen: true});
+  }
+  // not sent: take the question back out of the chat and put it in the composer
+  const um = [...conv.messages].reverse().find(m => m.role === 'user');
+  if (um && !opt.regen){
+    await jpost(`/api/conversations/${conv.id}/truncate`, {from_id: um.id});
+    conv.messages.splice(conv.messages.indexOf(um));
+    $(`#thread > [data-id="${CSS.escape(um.id)}"]`)?.remove();
+    if (!conv.messages.length) setEmpty(true);
+    if (!label){ $('#input').value = prompt; grow(); paintDock(); }
+  }
+  toast('Not sent');
 }
 async function refreshTitle(conv){
   try{ const c = (await jget(`/api/conversations/${conv.id}`)).conversation; conv.title = c.title;
@@ -907,6 +958,21 @@ addEventListener('keydown', e => {
   }
 });
 
+/* ===================== citations ===================== */
+let tip = null;
+document.addEventListener('mouseover', e => {
+  const c = e.target.closest('.cite');
+  if (!c){ if (tip){ tip.remove(); tip = null; } return; }
+  const el = c.closest('[data-id]'), m = el && S.conv && S.conv.messages.find(x => x.id === el.dataset.id);
+  const p = c.dataset.p, prev = m && m.meta && m.meta.previews && m.meta.previews[p];
+  if (!tip){ tip = document.createElement('div'); tip.className = 'citetip'; document.body.appendChild(tip); }
+  tip.innerHTML = `<b>Page ${esc(p)}</b>${prev ? esc(prev) : 'This page was not part of what the model read.'}`;
+  const r = c.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(innerWidth - 370, r.left)) + 'px';
+  tip.style.top = (r.top > 180 ? r.top - tip.offsetHeight - 8 : r.bottom + 8) + 'px';
+});
+$('#shield').onclick = () => setShield(!S.shield);
+
 /* ===================== settings ===================== */
 const st = (c, t) => `<span class="st ${c}">${esc(t)}</span>`;
 let KINDS = [];
@@ -933,6 +999,7 @@ async function loadSettings(){
   $('#storagenote').textContent = j.storage === 'keyring' ? 'Keys are kept in Windows Credential Manager on this PC and never shown again in full.' : 'Stored in a plain file on this PC (Windows Credential Manager isn\'t available).';
   $$('#provlist [data-del]').forEach(b => b.onclick = async () => { if (!confirm('Remove this key from Haven?')) return; await api('/api/providers/' + b.dataset.del, {method:'DELETE'}); await refreshModels(); loadSettings(); toast('Key removed'); });
   $$('#provlist [data-tog]').forEach(b => b.onclick = async () => { const p = j.providers.find(x => x.id === b.dataset.tog); await jpost('/api/providers/' + p.id, {enabled: !p.enabled}, 'PATCH'); await refreshModels(); loadSettings(); });
+  $('#shieldtg').checked = S.shield;
   try{
     const s = await jget('/api/status');
     $('#gsstatus').innerHTML = s.ghostscript ? st('ok', 'Installed') : st('part', 'Not installed');
@@ -940,6 +1007,7 @@ async function loadSettings(){
     $('#about').innerHTML = `Haven ${esc(s.version)}. <kbd>Ctrl</kbd> <kbd>K</kbd> tools, <kbd>Ctrl</kbd> <kbd>M</kbd> model, <kbd>Ctrl</kbd> <kbd>N</kbd> new chat, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd> search chats.`;
   }catch{}
 }
+$('#shieldtg').onchange = () => setShield($('#shieldtg').checked);
 $('#nkind').onchange = () => { $('#nbase').hidden = $('#nkind').value !== 'custom'; };
 $('#addkey').onclick = addKey;
 $('#nkey').onkeydown = e => { if (e.key === 'Enter') addKey(); };
@@ -989,6 +1057,7 @@ async function migrate(){
 (async function start(){
   paintDock(); paintModel(); $('#input').focus({preventScroll:true});
   await migrate();
+  try{ S.shield = (await jget('/api/settings')).shield !== false; }catch{}
   await Promise.all([refreshModels(), loadConvs()]);
   const last = store.get('conv', '');
   if (last && S.convs.some(c => c.id === last)) await openConv(last); else renderThread();

@@ -301,6 +301,8 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .tg[aria-pressed="true"]{border-color:transparent;background:var(--t-ai-bg);color:var(--t-ai)}
 .tg:disabled{cursor:default;opacity:.8}
 .tg svg{width:15px;height:15px}
+.tg.shield[aria-pressed="true"]{border-color:transparent;background:var(--t-conv-bg);color:var(--t-conv)}
+.tg.shield[aria-pressed="false"]{color:var(--warn)}
 .send{width:38px;height:38px;border-radius:12px;border:0;background:var(--grad);color:#fff;display:grid;place-items:center;transition:transform .15s var(--ease),filter .15s,opacity .2s;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--brand) 80%,transparent)}
 .send:hover{filter:brightness(1.06)}
 .send:disabled{opacity:.35;cursor:default;box-shadow:none}
@@ -470,6 +472,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
             <div class="crow">
               <button class="ib" id="b-attach" title="Add files"></button>
               <button class="tg" id="think" aria-pressed="false" title="Think it through first (slower)"></button>
+              <button class="tg shield" id="shield" aria-pressed="true" hidden></button>
               <span class="sp"></span>
               <button class="send" id="send" title="Send (Enter)" disabled></button>
             </div>
@@ -502,6 +505,11 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
     <p class="small" id="keymsg" style="margin-top:.5rem"></p>
     <div id="provlist"></div>
     <p class="small" id="storagenote" style="margin-top:.6rem"></p>
+  </div>
+  <div class="sec">
+    <h3><span class="d c-conv" id="ic-shield"></span>Privacy Shield</h3>
+    <label class="row" style="margin-top:0;cursor:pointer"><input type="checkbox" id="shieldtg" checked> <span>Hide personal details before anything goes to a cloud model</span></label>
+    <p class="small" style="margin-top:.45rem">Phone numbers, emails, PAN, Aadhaar, card numbers, IFSC codes and UPI IDs are replaced with placeholders like [PHONE_1]. The real values never leave this PC; answers show them again here. Local models get everything as written. Images and scanned pages can't be checked, so Haven asks first.</p>
   </div>
   <div class="sec">
     <h3><span class="d c-office" id="ic-ext"></span>Add-ons</h3>

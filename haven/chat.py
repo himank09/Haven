@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
 from haven import docs, media
+from haven.shield import Shield
 from haven.providers import keystore, registry
 from haven.providers.base import ModelInfo, ProviderConfig, ProviderError, redact
 
@@ -55,52 +56,82 @@ class LiveStream(StreamingResponse):
             tg.cancel_scope.cancel()
 
 
-def prepare(cfg: ProviderConfig, model: ModelInfo, files: List[dict]) -> Tuple[list, list, list]:
-    """Attachments -> (parts for the adapter, document blocks to put in the prompt, notes for the user)."""
-    parts, blocks, notes = [], [], []
+CITE_SYSTEM = ("The user attached document(s) with [Page N] markers. Cite the pages you used like (p. 12) or (pp. 3–5). "
+               "If the answer isn't in the provided pages, say so plainly instead of guessing.")
+
+
+class Prepared:
+    def __init__(self):
+        self.parts: list = []        # images / native PDFs for the adapter
+        self.blocks: list = []       # document text to put in the prompt
+        self.notes: list = []
+        self.pages = 0               # highest page count among attached text PDFs (for citation chips)
+        self.previews: dict = {}     # "N" -> first ~200 chars of that page
+        self.uncheckable: list = []  # names the Privacy Shield can't look inside (images, scans)
+        self.cited = False
+
+
+def prepare(cfg: ProviderConfig, model: ModelInfo, files: List[dict], question: str = "", whole: bool = False) -> Prepared:
+    """Attachments -> what the adapter sends, what goes into the prompt, and notes for the user."""
+    out = Prepared()
     budget = docs.budget_for(model)
     pdf_ok = model.pdf and not cfg.local
-    n_docs = max(1, sum(1 for f in files if f["mime"] in ("application/pdf", "text/plain")))
-    each = budget // n_docs
+    loaded = []  # (file, Doc | None, text | None)
     for f in files:
+        name, mime = f["name"], f["mime"]
+        if mime == "application/pdf":
+            try:
+                loaded.append((f, docs.extract(f["data"]), None))
+            except docs.UnreadablePDF as e:
+                out.notes.append(f"'{name}' couldn't be read ({e}).")
+        elif mime == "text/plain":
+            loaded.append((f, None, f["data"].decode("utf-8", "ignore")))
+        else:
+            loaded.append((f, None, None))
+    # fair budget split between text documents
+    text_docs = [(i, d, t) for i, (_f, d, t) in enumerate(loaded) if (d is not None and not docs.is_scanned(d.pages)) or t is not None]
+    needs = [len(docs.marked(d.pages)) if d is not None else len(t) for _i, d, t in text_docs]
+    shares = dict(zip([i for i, _d, _t in text_docs], docs.allocate(needs, budget)))
+    for i, (f, doc, text) in enumerate(loaded):
         name, mime = f["name"], f["mime"]
         if mime.startswith("image/"):
             try:
                 img = media.normalize_image(f["data"])
             except Exception:
-                notes.append(f"'{name}' isn't an image Haven can read.")
+                out.notes.append(f"'{name}' isn't an image Haven can read.")
                 continue
-            parts.append({"type": "image", "name": name, "mime": media.image_mime(img), "data": img})
-        elif mime == "application/pdf":
-            try:
-                pages = docs.extract_pages(f["data"])
-            except docs.UnreadablePDF as e:
-                notes.append(f"'{name}' couldn't be read ({e}).")
-                continue
-            if docs.is_scanned(pages):
-                if pdf_ok:
-                    parts.append({"type": "pdf", "name": name, "mime": "application/pdf", "data": f["data"]})
-                elif model.vision:
-                    n = SCAN_PAGES_LOCAL if cfg.local else SCAN_PAGES_CLOUD
-                    imgs = media.render_pdf_pages(f["data"], max_pages=n)
-                    parts += [{"type": "image", "name": f"{name} p{i + 1}", "mime": "image/jpeg", "data": b} for i, b in enumerate(imgs)]
-                    notes.append(f"'{name}' looks scanned; the model sees images of its first {len(imgs)} page(s).")
-                else:
-                    notes.append(f"'{name}' looks scanned and {model.id} can't see images. Pick a vision model (eye icon).")
-                continue
-            text, note = docs.document_text(name, pages, each)
-            if note:
-                notes.append(note)
-            blocks.append(f"<document name=\"{name}\" pages=\"{len(pages)}\">\n{text}\n</document>")
-        elif mime == "text/plain":
-            text = f["data"].decode("utf-8", "ignore")
+            out.parts.append({"type": "image", "name": name, "mime": media.image_mime(img), "data": img})
+            out.uncheckable.append(name)
+        elif doc is not None and docs.is_scanned(doc.pages):  # scans: unchanged behaviour (page images / native PDF)
+            if pdf_ok:
+                out.parts.append({"type": "pdf", "name": name, "mime": "application/pdf", "data": f["data"]})
+                out.uncheckable.append(name)
+            elif model.vision:
+                n = SCAN_PAGES_LOCAL if cfg.local else SCAN_PAGES_CLOUD
+                imgs = media.render_pdf_pages(f["data"], max_pages=n)
+                out.parts += [{"type": "image", "name": f"{name} p{k + 1}", "mime": "image/jpeg", "data": b} for k, b in enumerate(imgs)]
+                out.notes.append(f"'{name}' looks scanned; the model sees images of its first {len(imgs)} page(s).")
+                out.uncheckable.append(name)
+            else:
+                out.notes.append(f"'{name}' looks scanned and {model.id} can't see images. Pick a vision model (eye icon).")
+        elif doc is not None:
+            sel = docs.select(name, doc, shares.get(i, budget), question, whole)
+            if sel.note:
+                out.notes.append(sel.note)
+            out.blocks.append(f"<document name=\"{name}\" pages=\"{len(doc.pages)}\">\n{sel.text}\n</document>")
+            out.pages = max(out.pages, len(doc.pages))
+            for k, v in docs.previews(doc, sel.pages).items():
+                out.previews.setdefault(k, v)
+            out.cited = True
+        elif text is not None:
+            each = shares.get(i, budget)
             if len(text) > each:
-                notes.append(f"'{name}' is long; the model sees the first ~{each // 1000}k characters.")
+                out.notes.append(f"'{name}' is long; the model sees the first ~{max(1, each // 1000)}k characters.")
                 text = text[:each]
-            blocks.append(f"<document name=\"{name}\">\n{text}\n</document>")
+            out.blocks.append(f"<document name=\"{name}\">\n{text}\n</document>")
         else:
-            notes.append(f"'{name}' type isn't supported (convert it to PDF first).")
-    return parts, blocks, notes
+            out.notes.append(f"'{name}' type isn't supported (convert it to PDF first).")
+    return out
 
 
 def clean_history(messages) -> list:
@@ -138,6 +169,7 @@ class Saver:
         self.model = model_full_id
         self.content, self.thinking, self.notes, self.error = [], [], [], ""
         self.meta: dict = {}
+        self.shield = None  # set when the Privacy Shield masked this request: answers are saved with real values
         self.t0 = time.monotonic()
         self.last = 0.0
 
@@ -159,6 +191,9 @@ class Saver:
             return
         self.last = now
         text = "".join(self.content)
+        thinking = "".join(self.thinking)
+        if self.shield:
+            text, thinking = self.shield.unmask(text), self.shield.unmask(thinking)
         if self.error:
             text = (text + "\n\n" if text else "") + self.error
         meta = {**self.meta, "notes": self.notes, "error": bool(self.error), "elapsed": round(now - self.t0, 2),
@@ -169,9 +204,13 @@ class Saver:
             from haven import storage
 
             storage.get().upsert_message(self.cid, {"id": self.mid, "role": "assistant", "content": text,
-                                                    "thinking": "".join(self.thinking), "model": self.model, "meta": meta})
+                                                    "thinking": thinking, "model": self.model, "meta": meta})
         except Exception:
             log_error(traceback.format_exc())
+
+
+def shield_enabled() -> bool:
+    return bool(keystore.get_setting("shield", True))
 
 
 async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncIterator[str]:
@@ -179,10 +218,13 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
     messages = clean_history(payload.get("messages"))
     system = payload.get("system") or DEFAULT_SYSTEM
     think = bool(payload.get("think", False))
+    whole = bool(payload.get("whole", False))
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
     adapter = registry.ADAPTERS[cfg.style]
     done = {"done": True}
     saver = Saver(payload.get("save"), model.full_id)
     finished = False
+    shield_on = not cfg.local and shield_enabled()
 
     def out(ev: dict) -> str:
         saver.add(ev)
@@ -190,15 +232,42 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
         return json.dumps(ev, ensure_ascii=False) + "\n"
 
     try:
+        prep = await asyncio.to_thread(prepare, cfg, model, files, question, whole)
+        if shield_on and prep.uncheckable and not payload.get("shield_ok"):
+            # ask once per conversation; nothing was sent and nothing is saved
+            names = ", ".join(f"'{n}'" for n in prep.uncheckable[:3])
+            finished = True
+            saver.on = False
+            yield line(confirm=f"{names} can't be checked for personal details (images and scans can't be read by the "
+                               f"Privacy Shield). Send to {cfg.name} anyway?")
+            yield json.dumps(done) + "\n"
+            return
         saver.write(final=False)  # the row exists from the first moment
-        parts, blocks, notes = await asyncio.to_thread(prepare, cfg, model, files)
-        for n in notes:
+        if prep.pages:
+            saver.meta.update({"pages": prep.pages, "previews": prep.previews})
+            yield out({"docs": {"pages": prep.pages, "previews": prep.previews}})
+        for n in prep.notes:
             yield out({"note": n})
-        if blocks:
+        if prep.blocks:
             for m in reversed(messages):
                 if m["role"] == "user":
-                    m["content"] = "\n\n".join(blocks) + "\n\n" + m["content"]
+                    m["content"] = "\n\n".join(prep.blocks) + "\n\n" + m["content"]
                     break
+        if prep.cited:
+            system = system + "\n\n" + CITE_SYSTEM
+        parts = prep.parts
+        if shield_on:
+            sh = Shield()
+            messages = [{**m, "content": sh.mask(m["content"])} for m in messages]
+            system = sh.mask(system)
+            saver.shield = sh
+            summary = sh.summary(cfg.name)
+            if summary:  # the map stays on this PC: the page (localhost) uses it to show real values
+                yield out({"note": summary, "unmask": sh.values})
+            if prep.uncheckable:
+                yield out({"note": f"Sent without checking (Privacy Shield can't read images or scans): {', '.join(prep.uncheckable)}."})
+        elif not cfg.local:
+            yield out({"note": f"Privacy Shield is off: messages and files go to {cfg.name} as written."})
         try:
             async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
                 if ev.get("done"):
