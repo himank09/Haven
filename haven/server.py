@@ -408,6 +408,42 @@ async def models(refresh: int = 0):
     return await registry.all_models(bool(refresh))
 
 
+# ---------------- profile (stored only in settings.json on this PC) ----------------
+PROFILE_DEFAULT = {"name": "", "call": "", "about": "", "style": "balanced", "language": "", "hue": 225, "image": "", "use_in_chats": True}
+PROFILE_LIMITS = {"name": 60, "call": 40, "about": 1500, "language": 40}
+
+
+@app.get("/api/profile")
+def profile_get():
+    return {**PROFILE_DEFAULT, **(keystore.get_setting("profile") or {})}
+
+
+@app.post("/api/profile")
+def profile_set(payload: dict):
+    p = profile_get()
+    for k, limit in PROFILE_LIMITS.items():
+        if k in payload:
+            p[k] = str(payload[k] or "").strip()[:limit]
+    if "style" in payload:
+        if payload["style"] not in ("concise", "balanced", "detailed"):
+            raise HTTPException(400, "style must be concise, balanced or detailed")
+        p["style"] = payload["style"]
+    if "hue" in payload:
+        try:
+            p["hue"] = int(payload["hue"]) % 360
+        except (TypeError, ValueError):
+            raise HTTPException(400, "hue must be a number")
+    if "use_in_chats" in payload:
+        p["use_in_chats"] = bool(payload["use_in_chats"])
+    if "image" in payload:
+        img = str(payload["image"] or "")
+        if img and (len(img) > 400_000 or not img.startswith(("data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,"))):
+            raise HTTPException(400, "The photo must be a small PNG, JPEG or WebP image")
+        p["image"] = img
+    keystore.set_setting("profile", p)
+    return p
+
+
 # ---------------- conversations (SQLite) ----------------
 def _store():
     return storage.get()

@@ -217,6 +217,28 @@ class Saver:
             log_error(traceback.format_exc())
 
 
+STYLE = {"concise": "Keep answers short and to the point.",
+         "detailed": "Give thorough, detailed answers with examples where they help.", "balanced": ""}
+
+
+def profile_prompt(default_system: bool = True) -> str:
+    """The user's profile (Settings -> Profile), added to the instructions when they switched it on."""
+    p = keystore.get_setting("profile") or {}
+    if not p or not p.get("use_in_chats", True):
+        return ""
+    bits = []
+    call = (p.get("call") or p.get("name") or "").strip()
+    if call:
+        bits.append(f"The user's name is {call}; use it when it feels natural.")
+    if (p.get("about") or "").strip():
+        bits.append("What the user wants you to know about them: " + p["about"].strip())
+    if default_system and STYLE.get(p.get("style", "balanced")):  # tool actions (e.g. OCR) keep their own format
+        bits.append(STYLE[p["style"]])
+    if (p.get("language") or "").strip():
+        bits.append(f"Reply in {p['language'].strip()} unless the user asks otherwise.")
+    return ("\n\n" + "\n".join(bits)) if bits else ""
+
+
 def shield_enabled() -> bool:
     return bool(keystore.get_setting("shield", True))
 
@@ -224,7 +246,7 @@ def shield_enabled() -> bool:
 async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncIterator[str]:
     files = media.decode_files(payload.get("files"))
     messages = clean_history(payload.get("messages"))
-    system = payload.get("system") or DEFAULT_SYSTEM
+    system = (payload.get("system") or DEFAULT_SYSTEM) + profile_prompt(default_system=not payload.get("system"))
     think = bool(payload.get("think", False))
     whole = bool(payload.get("whole", False))
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
