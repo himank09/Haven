@@ -6,7 +6,7 @@
 
 Compress, merge, split and convert files without uploading them anywhere. Chat with local models through Ollama or LM Studio, or bring your own key for OpenAI, Claude, Gemini and ten more providers. Ask questions about 300-page PDFs and get answers with page numbers. Personal details are hidden before anything goes to the cloud.
 
-![Version](https://img.shields.io/badge/version-1.0.0-4F6BED) ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4) ![Works offline](https://img.shields.io/badge/works-offline-15803D) ![License: MIT](https://img.shields.io/badge/license-MIT-7C3AED)
+![Version](https://img.shields.io/badge/version-1.1.0-6B56D6) ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4) ![Works offline](https://img.shields.io/badge/works-offline-15803D) ![License: MIT](https://img.shields.io/badge/license-MIT-7C3AED)
 
 ![Haven home screen](docs/img/home-light.png)
 
@@ -21,6 +21,7 @@ I didn't want to keep uploading marksheets, ID scans and work documents to rando
 - [What it can do](#what-it-can-do)
 - [File tools](#file-tools)
 - [AI chat](#ai-chat)
+- [Make pictures](#make-pictures)
 - [Long PDFs with page citations](#long-pdfs-with-page-citations)
 - [Privacy Shield](#privacy-shield)
 - [Models and keys](#models-and-keys)
@@ -39,10 +40,11 @@ I didn't want to keep uploading marksheets, ID scans and work documents to rando
 | **Image tools** | Compress to a target size; convert between PNG, JPG, WebP, HEIC, BMP, TIFF, GIF and ICO |
 | **Convert anything** | Word, PowerPoint, Excel ↔ PDF; video → MP3 or GIF; audio formats; Markdown, HTML, CSV, JSON |
 | **AI chat** | Any model: Ollama and LM Studio on your PC, or OpenAI, Anthropic, Gemini, OpenRouter, Groq, xAI, DeepSeek, Mistral, Together, Fireworks, Cerebras, Hugging Face and any OpenAI-compatible server |
+| **Make pictures** | Ask for a picture in the chat: free FLUX.1 schnell on Hugging Face's free Space, Cloudflare Workers AI, Pollinations, or Gemini's Nano Banana models |
 | **Read your files** | Summaries, key points, practice questions, questions about a PDF with page citations, text from scans and photos |
 | **Writing help** | Fix grammar, make shorter, make professional, turn into an email, translate |
 | **Privacy** | Runs on `127.0.0.1` only, no accounts, no analytics; Privacy Shield for cloud models; keys in Windows Credential Manager |
-| **Comfort** | Saved chats with search, light and dark themes, math and code formatting, keyboard shortcuts, works at any display scaling |
+| **Comfort** | Saved chats with search, a calm pastel-haze design in light and dark, math and code formatting, keyboard shortcuts, works at any display scaling |
 
 <table>
 <tr>
@@ -50,7 +52,7 @@ I didn't want to keep uploading marksheets, ID scans and work documents to rando
 <td width="38%"><img src="docs/img/small-window-light.png" alt="Small window"></td>
 </tr>
 <tr>
-<td>Light and dark themes, or follow Windows.</td>
+<td>Light and dark themes, or follow Windows. A soft pastel haze with film grain and ripple rings, frosted-glass panels and gentle motion that rests when you're idle.</td>
 <td>Small windows and high display scaling: the sidebar turns into a drawer.</td>
 </tr>
 </table>
@@ -106,6 +108,25 @@ Press **Ctrl K** to search every tool. Tools that work with the files you've att
 <td><b>Collapsed sidebar.</b> Collapse the sidebar to a slim icon rail. Hover over it and your recent chats slide out; move away and they tuck back in.</td>
 </tr>
 </table>
+
+## Make pictures
+
+<img src="docs/img/image-dark.png" alt="A picture made in the chat" width="100%">
+
+Turn on **Image** in the chat box, or just ask: "draw…", "generate an image of…", "make me a logo…". Haven asks once whether you want a picture or a text answer.
+
+- **Pick the model** in the dropdown next to the Image button. Every model that can make a picture right now is listed, free ones first:
+  - **FLUX.1 schnell · Hugging Face Space · Free.** Uses Hugging Face's free public Space; a free Hugging Face token gives you your account's daily allowance.
+  - **FLUX.1 schnell · Cloudflare Workers AI · Free.** A daily free allowance with a free Cloudflare account.
+  - **Pollinations · Free.** No account at all (one picture every 45 seconds; pictures carry a small pollinations.ai mark).
+  - **Nano Banana models · Google Gemini** and **Stable Diffusion 3 · Hugging Face** need billing or credits on your key.
+- **Automatic** tries the free ones quietly, one after another, and only tells you which one made the picture.
+- If a model you picked can't make it, the answer says why in one line and offers **Try another model** buttons.
+- Pictures are saved as files in `%APPDATA%\Haven\images` (not in the chat database), with **Save** and **Copy** on each one. The Privacy Shield hides personal details in your description first.
+
+<img src="docs/img/settings-images-dark.png" alt="Settings: Images" width="100%">
+
+Set the services up in **Settings → Images**. Tokens are kept in Windows Credential Manager, like model keys; a Hugging Face key added under Models & keys works too.
 
 ## Long PDFs with page citations
 
@@ -199,6 +220,7 @@ Everything in your profile stays on your PC unless that switch is on, and with a
 | A cloud model, Privacy Shield **on** (default) | Your message, earlier messages in that chat and the text of attached PDFs, **with personal details replaced** by placeholders. |
 | A cloud model, Privacy Shield **off** | Your messages and files as written. A note in the chat says so. |
 | A cloud model with a photo or scanned PDF | Only after you say yes (once per chat). |
+| Making a picture | Your description (with personal details hidden by the Privacy Shield) goes to the image service you picked. |
 
 - The model picker and the line under the message box always show whether you're on a **Private** or a **Cloud** model.
 - Chats are stored in `%APPDATA%\Haven\haven.db` on your PC. Attached files aren't stored, only their names and sizes.
@@ -277,6 +299,7 @@ haven/server.py      FastAPI backend: file tools, settings, chats, providers, pr
 haven/providers/     one adapter per API style (OpenAI-compatible, Anthropic, Gemini, Ollama),
                      key detection, model lists and cache, popular-model catalog, key storage
 haven/chat.py        the chat pipeline: attachments, citations, Privacy Shield, saving answers
+haven/images.py      making pictures: Hugging Face Space, Cloudflare, Pollinations, Gemini
 haven/docs.py        PDF text per page, BM25 retrieval and page citations
 haven/shield.py      Privacy Shield detectors and placeholders
 haven/storage.py     chats in SQLite (with full-text search)
@@ -285,8 +308,8 @@ haven/web/           the interface: plain HTML, CSS and JavaScript, no build ste
 ```
 
 - **Backend:** Python, FastAPI, httpx, pypdf, pypdfium2, Pillow, SQLite. **Desktop window:** pywebview (Microsoft WebView2).
-- **Interface:** hand-written HTML, CSS and JavaScript. A small markdown renderer that never copies HTML from model answers, and KaTeX for math.
-- **Tests:** 530 automated tests: every file tool, every AI provider against fake servers (streaming, errors, cancelling), key handling, citations, the Privacy Shield, security (untrusted model output can't run scripts or load anything), and the interface itself in a real browser, including speed budgets. See [tests/README.md](tests/README.md).
+- **Interface:** hand-written HTML, CSS and JavaScript on the shadcn/ui design system (ported to plain CSS), with Geist and IBM Plex Mono bundled. A small markdown renderer that never copies HTML from model answers, and KaTeX for math.
+- **Tests:** 554 automated tests: every file tool, every AI provider against fake servers (streaming, errors, cancelling), key handling, citations, the Privacy Shield, security (untrusted model output can't run scripts or load anything), and the interface itself in a real browser, including speed budgets. See [tests/README.md](tests/README.md).
 
 ```bat
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
@@ -298,7 +321,7 @@ haven/web/           the interface: plain HTML, CSS and JavaScript, no build ste
 ```bat
 build.bat
 ```
-This produces `dist\Haven\Haven.exe`. Pushing a tag such as `v1.0.0` also makes GitHub Actions build the app and attach the zip to a release.
+This produces `dist\Haven\Haven.exe`. Pushing a tag such as `v1.1.0` also makes GitHub Actions build the app and attach the zip to a release.
 
 ## License
 

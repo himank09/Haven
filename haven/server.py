@@ -43,7 +43,7 @@ try:  # optional: iPhone HEIC photos
 except Exception:
     pass
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 WEB = Path(__file__).parent / "web"
 TOKEN = os.environ.get("HAVEN_TOKEN", "")  # set by app.py for each launch
 RESULTS = {}  # id -> (filename, bytes): finished files waiting for the native Save dialog
