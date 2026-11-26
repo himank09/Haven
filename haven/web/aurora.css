@@ -1,0 +1,118 @@
+/* Haven "Aurora glass": shadcn/ui structure + drifting aurora light, frosted-glass panels, a living gradient
+   chat box and spring motion. Loaded after shadcn.css. Respects prefers-reduced-motion (base stylesheet). */
+
+:root{
+  --a1:#8b5cf6; --a2:#06b6d4; --a3:#f59e8b;               /* violet, teal, peach */
+  --accent:#7c3aed; --accent-2:#0891b2;
+  --accent-grad:linear-gradient(120deg,#7c3aed 0%,#6366f1 45%,#0891b2 100%);
+  --glass-bg:rgba(255,255,255,.62); --glass-strong:rgba(255,255,255,.80); --glass-line:rgba(15,23,42,.08);
+  --bg:#f7f6fb; --side-bg:rgba(250,249,255,.55); --sunken:rgba(15,23,42,.045);
+  --brand:#6d28d9; --brand-ink:#ffffff; --brand-text:#5b21b6; --ring:#8b5cf6;
+  --spring:cubic-bezier(.34,1.56,.64,1); --glide:cubic-bezier(.22,1,.36,1);
+  --glow:0 8px 30px -10px rgba(124,58,237,.45);
+}
+:root[data-theme=dark]{
+  --a1:#7c3aed; --a2:#0e7490; --a3:#be5a4a;
+  --accent:#a78bfa; --accent-2:#22d3ee;
+  --accent-grad:linear-gradient(120deg,#a78bfa 0%,#818cf8 45%,#22d3ee 100%);
+  --glass-bg:rgba(20,20,28,.55); --glass-strong:rgba(22,22,32,.78); --glass-line:rgba(255,255,255,.08);
+  --bg:#09090f; --side-bg:rgba(14,14,22,.55); --sunken:rgba(255,255,255,.06);
+  --brand:#a78bfa; --brand-ink:#12091f; --brand-text:#c4b5fd; --ring:#a78bfa;
+  --glow:0 8px 34px -10px rgba(167,139,250,.55);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --a1:#7c3aed; --a2:#0e7490; --a3:#be5a4a;
+  --accent:#a78bfa; --accent-2:#22d3ee;
+  --accent-grad:linear-gradient(120deg,#a78bfa 0%,#818cf8 45%,#22d3ee 100%);
+  --glass-bg:rgba(20,20,28,.55); --glass-strong:rgba(22,22,32,.78); --glass-line:rgba(255,255,255,.08);
+  --bg:#09090f; --side-bg:rgba(14,14,22,.55); --sunken:rgba(255,255,255,.06);
+  --brand:#a78bfa; --brand-ink:#12091f; --brand-text:#c4b5fd; --ring:#a78bfa;
+  --glow:0 8px 34px -10px rgba(167,139,250,.55);
+}}
+
+/* ---------- the aurora: three blurred light blobs drifting behind the whole app ---------- */
+body{background:var(--bg)}
+.app{position:relative;isolation:isolate}
+.app::before,.app::after,.main>.aurora{content:"";position:fixed;z-index:-1;pointer-events:none;border-radius:50%;opacity:.55;will-change:transform;contain:strict}
+.app::before{width:70vw;height:70vw;left:-8vw;top:-14vw;background:radial-gradient(closest-side,var(--a1),transparent);animation:drift1 26s ease-in-out infinite alternate}
+.app::after{width:62vw;height:62vw;right:-10vw;top:18vh;background:radial-gradient(closest-side,var(--a2),transparent);animation:drift2 32s ease-in-out infinite alternate}
+.main>.aurora{display:block;inset:auto;width:54vw;height:54vw;left:30vw;bottom:-26vw;background:radial-gradient(closest-side,var(--a3),transparent);opacity:.35;animation:drift3 38s ease-in-out infinite alternate}
+:root[data-theme=dark] .app::before,:root[data-theme=dark] .app::after{opacity:.32}
+:root[data-theme=dark] .main>.aurora{opacity:.18}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .app::before,:root:not([data-theme=light]) .app::after{opacity:.32}
+  :root:not([data-theme=light]) .main>.aurora{opacity:.18}}
+@keyframes drift1{to{transform:translate(18vw,12vh) scale(1.15)}}
+@keyframes drift2{to{transform:translate(-16vw,-10vh) scale(.9)}}
+@keyframes drift3{to{transform:translate(-14vw,-18vh) scale(1.2)}}
+.main.busy-thread .aurora{opacity:.25}
+/* the light only drifts while you're using Haven (see app.js: html.alive); idle, it rests and costs no CPU */
+.app::before,.app::after,.main>.aurora,.hero .arch{animation-play-state:paused!important}
+.alive .app::before,.alive .app::after,.alive .main>.aurora,.alive .hero .arch{animation-play-state:running!important}
+
+/* ---------- frosted glass panels ---------- */
+.side{background:var(--side-bg);border-right:1px solid var(--glass-line)}
+.top{background:transparent;backdrop-filter:none;border-bottom:1px solid transparent}
+.composer,.popmenu,.picker,.pal,.dlg,.toast,.citetip,.side-off.side-peek .side-in,.param{
+  background:var(--glass-strong)!important;backdrop-filter:blur(28px) saturate(1.5);border-color:var(--glass-line)!important}
+.dlg-nav{background:transparent}
+.plist,.card,.fchip,.md .code{background:var(--glass-bg);backdrop-filter:blur(16px);border-color:var(--glass-line)}
+.btn,.newchat,.chip,.tile,.act,.tg,.imgmodel,.pill,.retry button,.theme{background-color:var(--glass-bg);border-color:var(--glass-line);backdrop-filter:blur(12px)}
+.dock{background:transparent!important}
+.stage:not(.empty) .dock::before{display:none}
+.stage:not(.empty) .dock{background:none!important}
+
+/* ---------- motion: lift on hover, press on click ---------- */
+.btn,.newchat,.chip,.tile,.act,.tg,.imgmodel,.pill,.retry button,.send,.ib,.conv,.tab,.chipbtn{
+  transition:transform .35s var(--spring),box-shadow .3s var(--glide),background-color .2s,color .2s,border-color .2s}
+.btn:hover,.newchat:hover,.chip:hover,.tile:hover,.act:hover,.tg:hover,.pill:hover,.retry button:hover{transform:translateY(-1.5px);box-shadow:var(--glow)}
+.btn:active,.newchat:active,.chip:active,.tile:active,.act:active,.tg:active,.pill:active,.retry button:active,.send:active,.ib:active,.chipbtn:active{transform:scale(.96);transition-duration:.08s}
+.conv:hover{transform:translateX(2px)}
+
+/* ---------- accent: violet -> teal ---------- */
+.brand .mark,.hero .arch,.a .av{background:var(--accent-grad);box-shadow:var(--glow)}
+.brand .mark svg,.hero .arch svg,.a .av svg{color:#fff;stroke:#fff}
+.hero .arch{animation:rise .7s var(--glide) both,float 6s ease-in-out 1s infinite}
+@keyframes float{50%{transform:translateY(-6px)}}
+.hero h1 span{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn.primary,.send{background:var(--accent-grad);border-color:transparent;color:#fff;box-shadow:var(--glow)}
+.btn.primary:hover,.send:not(:disabled):hover{background:var(--accent-grad);filter:brightness(1.08);transform:translateY(-1.5px)}
+.send.stop{background:var(--accent-grad);color:#fff}
+.send:disabled{box-shadow:none;filter:grayscale(.6)}
+.tg[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);color:var(--brand-text)}
+.tg[aria-pressed="true"] svg{color:var(--accent)}
+.conv.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink)}
+.conv.on::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:3px;border-radius:3px;background:var(--accent-grad)}
+.tab.on{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.switch input:checked+span{background:var(--accent-grad)}
+.switch input:checked+span::after{background:#fff}
+.u{background-color:#4f46e5;background-image:linear-gradient(120deg,#6d28d9 0%,#4f46e5 50%,#0e7490 100%);color:#fff;box-shadow:var(--glow)}
+.u .att span{background:rgba(255,255,255,.2)}
+.cite{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--brand-text)}
+.md .lnk{color:var(--brand-text);text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.live-caret>.mdb:last-child>*:last-child::after{background:var(--accent-grad);width:3px;border-radius:2px;box-shadow:0 0 12px var(--accent)}
+.typing i{background:var(--accent-grad)}
+.conv .live{background:var(--accent)}
+::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+
+/* ---------- the chat box: a gradient ring that glows on focus and flows while the AI writes ---------- */
+@property --spin{syntax:"<angle>";inherits:false;initial-value:0deg}
+.composer{border-radius:20px;box-shadow:0 10px 40px -18px rgba(15,23,42,.35)}
+.composer::before{display:block!important;content:"";position:absolute;inset:-1.5px;border-radius:inherit;padding:1.5px;z-index:-1;
+  background:conic-gradient(from var(--spin),var(--a1),var(--a2),var(--a3),var(--a1));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:.35;transition:opacity .4s var(--glide)}
+.composer:focus-within{border-color:transparent!important;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 14%,transparent),0 16px 50px -18px color-mix(in srgb,var(--accent) 60%,transparent)}
+.composer:focus-within::before{opacity:1}
+.composer.streaming::before{opacity:1;animation:spin 2.4s linear infinite}
+.composer.streaming{box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent),0 0 60px -12px color-mix(in srgb,var(--accent-2) 55%,transparent)}
+@keyframes spin{to{--spin:360deg}}
+
+/* ---------- messages arrive with a spring ---------- */
+.msg:not(.still){animation:msgIn .55s var(--spring) both}
+.uwrap.msg:not(.still){animation-name:msgInRight}
+@keyframes msgIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes msgInRight{from{opacity:0;transform:translate(16px,10px) scale(.96)}to{opacity:1;transform:none}}
+.pic img{animation:picIn .7s var(--glide) both}
+@keyframes picIn{from{opacity:0;filter:blur(18px);transform:scale(.97)}to{opacity:1;filter:none;transform:none}}
+.popmenu,.picker{animation:popIn .28s var(--spring)}
+@keyframes popIn{from{opacity:0;transform:translateY(-6px) scale(.97)}to{opacity:1;transform:none}}

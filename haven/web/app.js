@@ -839,8 +839,14 @@ async function stream(body, on, signal){
     while ((k = buf.indexOf('\n')) >= 0){ const ln = buf.slice(0, k); buf = buf.slice(k + 1); if (ln.trim()){ let j; try{ j = JSON.parse(ln); }catch{ continue; } on(j); } } }
 }
 const liveHere = () => !!(S.conv && S.live.has(S.conv.id));
+// Aurora background: drift while the user is active or an answer streams, rest when idle (no idle CPU)
+let aliveT = 0;
+function wake(){ document.documentElement.classList.add('alive'); clearTimeout(aliveT);
+  aliveT = setTimeout(() => { if (!document.querySelector('#composer.streaming')) document.documentElement.classList.remove('alive'); else wake(); }, 6000); }
+['pointermove', 'keydown', 'wheel', 'pointerdown'].forEach(t => addEventListener(t, wake, {passive: true}));
 function setBusyUI(){
   const on = liveHere(), b = $('#send');
+  $('#composer').classList.toggle('streaming', on); if (on) wake();
   b.classList.toggle('stop', on); b.innerHTML = ic(on ? 'stop' : 'up'); b.title = on ? 'Stop (Esc)' : 'Send (Enter)'; b.setAttribute('aria-label', on ? 'Stop' : 'Send');
   b.disabled = !on && !typed();
 }
