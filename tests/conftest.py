@@ -71,7 +71,10 @@ def hub() -> Hub:
 @pytest.fixture(autouse=True)
 def clean_state(request):
     """Fresh settings, model cache, keyring and fake providers for every test."""
+    from haven import storage
     from haven.providers import ollama, registry
+
+    storage.close()  # release haven.db so it can be archived
 
     d = TEST_HOME / "Haven"
     d.mkdir(parents=True, exist_ok=True)
@@ -79,11 +82,15 @@ def clean_state(request):
     archive.mkdir(exist_ok=True)
     for f in ("settings.json", "models_cache.json", "haven.db", "haven.db-wal", "haven.db-shm"):
         p = d / f
-        if p.exists():
+        for _try in range(40):  # a stream from the previous test may still be finishing and reopen the DB
+            if not p.exists():
+                break
             try:
                 p.replace(archive / f"{len(list(archive.iterdir()))}-{f}")
+                break
             except OSError:
-                p.unlink(missing_ok=True)
+                storage.close()
+                time.sleep(0.05)
     registry.CACHE.mem.clear()
     registry.CACHE.local.clear()
     registry.CACHE._loaded = False

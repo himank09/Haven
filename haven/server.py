@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
-from haven import chat
+from haven import chat, storage
 from haven import convert as conv
 from haven.media import TEXT_EXT, decode_files, guess_mime, normalize_image, render_pdf_pages  # noqa: F401 (re-exported)
 from haven.providers import keystore, registry
@@ -56,6 +56,7 @@ async def lifespan(_app):
     yield
     if task:
         task.cancel()
+    storage.close()
 
 
 app = FastAPI(title="Haven", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -72,6 +73,7 @@ async def show_error(request: Request, exc: Exception):
 
 
 app.mount("/fonts", StaticFiles(directory=WEB / "fonts"), name="fonts")
+app.mount("/web", StaticFiles(directory=WEB), name="web")  # app.js, md.js (no CDN: everything is local)
 
 
 # ---------------- settings ----------------
@@ -404,6 +406,70 @@ async def providers_delete(pid: str):
 @app.get("/api/models")
 async def models(refresh: int = 0):
     return await registry.all_models(bool(refresh))
+
+
+# ---------------- conversations (SQLite) ----------------
+def _store():
+    return storage.get()
+
+
+@app.get("/api/conversations")
+def conv_list():
+    return {"conversations": _store().list_convs()}
+
+
+@app.post("/api/conversations")
+def conv_create(payload: dict):
+    return _store().create_conv(str(payload.get("title") or ""), str(payload.get("model") or ""), payload.get("id") or None)
+
+
+@app.get("/api/conversations/search")
+def conv_search(q: str = ""):
+    return {"results": _store().search(q)}
+
+
+@app.post("/api/conversations/import")
+def conv_import(payload: dict):
+    msgs = payload.get("messages") or []
+    if not isinstance(msgs, list):
+        raise HTTPException(400, "messages must be a list")
+    return _store().import_conv(str(payload.get("title") or "Earlier chats"), msgs)
+
+
+@app.get("/api/conversations/{cid}")
+def conv_get(cid: str):
+    c = _store().get_conv(cid)
+    if not c:
+        raise HTTPException(404, "Conversation not found")
+    return c
+
+
+@app.patch("/api/conversations/{cid}")
+def conv_patch(cid: str, payload: dict):
+    c = _store().update_conv(cid, payload.get("title"), payload.get("model"))
+    if not c:
+        raise HTTPException(404, "Conversation not found")
+    return c
+
+
+@app.delete("/api/conversations/{cid}")
+def conv_delete(cid: str):
+    if not _store().delete_conv(cid):
+        raise HTTPException(404, "Conversation not found")
+    return {"ok": True}
+
+
+@app.post("/api/conversations/{cid}/messages")
+def conv_message(cid: str, payload: dict):
+    try:
+        return _store().upsert_message(cid, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/conversations/{cid}/truncate")
+def conv_truncate(cid: str, payload: dict):
+    return {"ok": True, "removed": _store().truncate(cid, str(payload.get("from_id") or ""))}
 
 
 # ---------------- AI ----------------

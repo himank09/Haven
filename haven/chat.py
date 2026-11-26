@@ -122,6 +122,58 @@ async def resolve_or_400(model_id: str) -> Tuple[ProviderConfig, ModelInfo]:
     return cfg, model
 
 
+SAVE_EVERY = 2.0  # seconds: a crash loses at most this much of a streaming answer
+
+
+class Saver:
+    """Writes the assistant message to SQLite while it streams (every ~2 s and at the end).
+
+    The page passes {"save": {"conversation_id", "message_id"}}; the server owns the write, so a chat the
+    user switched away from keeps saving into its own conversation and nowhere else."""
+
+    def __init__(self, save: dict, model_full_id: str):
+        self.cid = str((save or {}).get("conversation_id") or "")
+        self.mid = str((save or {}).get("message_id") or "")
+        self.on = bool(self.cid and self.mid)
+        self.model = model_full_id
+        self.content, self.thinking, self.notes, self.error = [], [], [], ""
+        self.meta: dict = {}
+        self.t0 = time.monotonic()
+        self.last = 0.0
+
+    def add(self, ev: dict):
+        if "content" in ev:
+            self.content.append(ev["content"])
+        if "thinking" in ev:
+            self.thinking.append(ev["thinking"])
+        if "note" in ev:
+            self.notes.append(ev["note"])
+        if "error" in ev:
+            self.error = ev["error"]
+
+    def write(self, final: bool = False, stopped: bool = False):
+        if not self.on:
+            return
+        now = time.monotonic()
+        if not final and now - self.last < SAVE_EVERY:
+            return
+        self.last = now
+        text = "".join(self.content)
+        if self.error:
+            text = (text + "\n\n" if text else "") + self.error
+        meta = {**self.meta, "notes": self.notes, "error": bool(self.error), "elapsed": round(now - self.t0, 2),
+                "live": not final}
+        if stopped:
+            meta["stopped"] = True
+        try:
+            from haven import storage
+
+            storage.get().upsert_message(self.cid, {"id": self.mid, "role": "assistant", "content": text,
+                                                    "thinking": "".join(self.thinking), "model": self.model, "meta": meta})
+        except Exception:
+            log_error(traceback.format_exc())
+
+
 async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncIterator[str]:
     files = media.decode_files(payload.get("files"))
     messages = clean_history(payload.get("messages"))
@@ -129,25 +181,41 @@ async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncI
     think = bool(payload.get("think", False))
     adapter = registry.ADAPTERS[cfg.style]
     done = {"done": True}
+    saver = Saver(payload.get("save"), model.full_id)
+    finished = False
+
+    def out(ev: dict) -> str:
+        saver.add(ev)
+        saver.write()
+        return json.dumps(ev, ensure_ascii=False) + "\n"
+
     try:
+        saver.write(final=False)  # the row exists from the first moment
         parts, blocks, notes = await asyncio.to_thread(prepare, cfg, model, files)
         for n in notes:
-            yield line(note=n)
+            yield out({"note": n})
         if blocks:
             for m in reversed(messages):
                 if m["role"] == "user":
                     m["content"] = "\n\n".join(blocks) + "\n\n" + m["content"]
                     break
-        async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
-            if ev.get("done"):
-                done = ev
-                continue
-            yield json.dumps(ev, ensure_ascii=False) + "\n"
-    except ProviderError as e:
-        yield line(error=redact(e.message, cfg.secrets()))
-    except (asyncio.CancelledError, GeneratorExit):
-        raise
-    except Exception as e:
-        log_error(traceback.format_exc(), cfg.secrets())
-        yield line(error=f"Something went wrong ({type(e).__name__}). Details are in errors.log.")
-    yield json.dumps(done, ensure_ascii=False) + "\n"
+        try:
+            async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
+                if ev.get("done"):
+                    done = ev
+                    continue
+                yield out(ev)
+        except ProviderError as e:
+            yield out({"error": redact(e.message, cfg.secrets())})
+        except (asyncio.CancelledError, GeneratorExit):
+            raise
+        except Exception as e:
+            log_error(traceback.format_exc(), cfg.secrets())
+            yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+        saver.meta.update({k: done[k] for k in ("speed", "usage") if k in done})
+        saver.write(final=True)
+        finished = True
+        yield json.dumps(done, ensure_ascii=False) + "\n"
+    finally:
+        if not finished:  # stopped by the user (or the window closed): keep what arrived
+            saver.write(final=True, stopped=True)
