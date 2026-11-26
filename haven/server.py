@@ -179,8 +179,9 @@ def parse_pages(spec: str, total: int) -> List[int]:
 def open_pdf(data: bytes, name: str = "file") -> PdfReader:
     try:
         r = PdfReader(io.BytesIO(data))
-        if r.is_encrypted:
-            r.decrypt("")
+        if r.is_encrypted and not r.decrypt(""):  # needs a password we don't have
+            raise ValueError("encrypted")
+        len(r.pages)  # fail here (clean 400) rather than later in the tool (500)
         return r
     except Exception:
         raise HTTPException(400, f"'{name}' is not a readable PDF (or it is password-protected)")
