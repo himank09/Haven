@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Haven</title>
+<link rel="stylesheet" href="/web/vendor/katex/katex.min.css">
 <script>try{const t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}
 try{if(JSON.parse(localStorage.getItem("side"))===false||innerWidth<760)document.documentElement.classList.add("side-off")}catch(e){}</script>
 <style>
@@ -293,6 +294,12 @@ details.th .tx{font-size:.84rem;color:var(--ink-2);border-left:2px solid var(--l
 .md .lnk{color:var(--brand-text);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .md .lnk-http{color:var(--ink-2);text-decoration:underline dotted}
 .md .img-alt{color:var(--ink-3);font-style:italic}
+.md .math-block{margin:.6rem 0;overflow-x:auto;overflow-y:hidden;padding:.2rem 0}
+.md .math .katex{font-size:1.05em}
+.md .math-block .katex-display{margin:0}
+.md .math-raw{font-size:.88em}
+.md .math-pending{color:var(--ink-2);font-family:var(--mono);font-size:.88em;white-space:pre-wrap}
+.katex .katex-mathml{position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;width:1px;height:1px}
 .md .longrun{display:block;max-width:100%;overflow-x:auto;white-space:nowrap;font:.82rem var(--mono);background:var(--sunken);border-radius:8px;padding:.4rem .6rem;margin:.3rem 0}
 .md .longmore{display:block;font-size:.8rem;color:var(--ink-3)}
 .cite{display:inline-flex;align-items:center;height:20px;padding:0 .45rem;margin:0 .12rem;border-radius:6px;border:1px solid color-mix(in srgb,var(--brand) 35%,transparent);background:var(--brand-soft);color:var(--brand-text);font:600 .74rem var(--font);vertical-align:.08em;cursor:help}
@@ -711,6 +718,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
   </div>
 </div>
 <div class="toast" id="toast" role="status"><span id="toasttxt"></span><button id="toastbtn" hidden>Undo</button></div>
+<script src="/web/vendor/katex/katex.min.js"></script>
 <script src="/web/md.js"></script>
 <script src="/web/app.js"></script>
 </body>
