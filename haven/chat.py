@@ -1,0 +1,290 @@
+"""The chat pipeline: request -> attachments -> provider adapter -> NDJSON lines for the page.
+
+NDJSON contract (unchanged from v0.9): {"content"}, {"thinking"}, {"note"}, {"error"}, and always a final
+{"done": true, "speed"?, "usage"?}.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+import traceback
+from pathlib import Path
+from typing import AsyncIterator, List, Tuple
+
+import anyio
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
+
+from haven import docs, media
+from haven.shield import Shield
+from haven.providers import keystore, registry
+from haven.providers.base import ModelInfo, ProviderConfig, ProviderError, redact
+
+DEFAULT_SYSTEM = "Be helpful, accurate and concise. Short answers unless asked for detail. Never invent facts that are not in the user's files."
+SCAN_PAGES_LOCAL, SCAN_PAGES_CLOUD = 3, 8
+
+
+def line(**kw) -> str:
+    return json.dumps(kw, ensure_ascii=False) + "\n"
+
+
+def log_error(text: str, secrets=()):
+    try:
+        d = Path(os.environ.get("HAVEN_LOG_DIR") or keystore.config_dir())
+        (d / "errors.log").open("a", encoding="utf-8").write(time.strftime("%Y-%m-%d %H:%M:%S ") + redact(text, secrets) + "\n")
+    except Exception:
+        pass
+
+
+class LiveStream(StreamingResponse):
+    """A StreamingResponse that always watches for the client going away and cancels the generator
+    immediately (Starlette only does this for ASGI < 2.4). Cancelling closes the upstream HTTP stream."""
+
+    async def __call__(self, scope, receive, send):
+        async with anyio.create_task_group() as tg:
+            async def run():
+                try:
+                    await self.stream_response(send)
+                except OSError:
+                    pass
+                tg.cancel_scope.cancel()
+
+            tg.start_soon(run)
+            await self.listen_for_disconnect(receive)
+            tg.cancel_scope.cancel()
+
+
+CITE_SYSTEM = ("The user attached document(s) with [Page N] markers. Cite the pages you used like (p. 12) or (pp. 3–5). "
+               "If the answer isn't in the provided pages, say so plainly instead of guessing.")
+
+
+class Prepared:
+    def __init__(self):
+        self.parts: list = []        # images / native PDFs for the adapter
+        self.blocks: list = []       # document text to put in the prompt
+        self.notes: list = []
+        self.pages = 0               # highest page count among attached text PDFs (for citation chips)
+        self.previews: dict = {}     # "N" -> first ~200 chars of that page
+        self.uncheckable: list = []  # names the Privacy Shield can't look inside (images, scans)
+        self.cited = False
+
+
+def prepare(cfg: ProviderConfig, model: ModelInfo, files: List[dict], question: str = "", whole: bool = False) -> Prepared:
+    """Attachments -> what the adapter sends, what goes into the prompt, and notes for the user."""
+    out = Prepared()
+    budget = docs.budget_for(model)
+    pdf_ok = model.pdf and not cfg.local
+    loaded = []  # (file, Doc | None, text | None)
+    for f in files:
+        name, mime = f["name"], f["mime"]
+        if mime == "application/pdf":
+            try:
+                loaded.append((f, docs.extract(f["data"]), None))
+            except docs.UnreadablePDF as e:
+                out.notes.append(f"'{name}' couldn't be read ({e}).")
+        elif mime == "text/plain":
+            loaded.append((f, None, f["data"].decode("utf-8", "ignore")))
+        else:
+            loaded.append((f, None, None))
+    # fair budget split between text documents
+    text_docs = [(i, d, t) for i, (_f, d, t) in enumerate(loaded) if (d is not None and not docs.is_scanned(d.pages)) or t is not None]
+    needs = [len(docs.marked(d.pages)) if d is not None else len(t) for _i, d, t in text_docs]
+    shares = dict(zip([i for i, _d, _t in text_docs], docs.allocate(needs, budget)))
+    for i, (f, doc, text) in enumerate(loaded):
+        name, mime = f["name"], f["mime"]
+        if mime.startswith("image/"):
+            try:
+                img = media.normalize_image(f["data"])
+            except Exception:
+                out.notes.append(f"'{name}' isn't an image Haven can read.")
+                continue
+            out.parts.append({"type": "image", "name": name, "mime": media.image_mime(img), "data": img})
+            out.uncheckable.append(name)
+        elif doc is not None and docs.is_scanned(doc.pages):  # scans: unchanged behaviour (page images / native PDF)
+            if pdf_ok:
+                out.parts.append({"type": "pdf", "name": name, "mime": "application/pdf", "data": f["data"]})
+                out.uncheckable.append(name)
+            elif model.vision:
+                n = SCAN_PAGES_LOCAL if cfg.local else SCAN_PAGES_CLOUD
+                imgs = media.render_pdf_pages(f["data"], max_pages=n)
+                out.parts += [{"type": "image", "name": f"{name} p{k + 1}", "mime": "image/jpeg", "data": b} for k, b in enumerate(imgs)]
+                out.notes.append(f"'{name}' looks scanned; the model sees images of its first {len(imgs)} page(s).")
+                out.uncheckable.append(name)
+            else:
+                out.notes.append(f"'{name}' looks scanned and {model.id} can't see images. Pick a vision model (eye icon).")
+        elif doc is not None:
+            sel = docs.select(name, doc, shares.get(i, budget), question, whole)
+            if sel.note:
+                out.notes.append(sel.note)
+            out.blocks.append(f"<document name=\"{name}\" pages=\"{len(doc.pages)}\">\n{sel.text}\n</document>")
+            out.pages = max(out.pages, len(doc.pages))
+            for k, v in docs.previews(doc, sel.pages).items():
+                out.previews.setdefault(k, v)
+            out.cited = True
+        elif text is not None:
+            each = shares.get(i, budget)
+            if len(text) > each:
+                out.notes.append(f"'{name}' is long; the model sees the first ~{max(1, each // 1000)}k characters.")
+                text = text[:each]
+            out.blocks.append(f"<document name=\"{name}\">\n{text}\n</document>")
+        else:
+            out.notes.append(f"'{name}' type isn't supported (convert it to PDF first).")
+    return out
+
+
+def clean_history(messages) -> list:
+    out = []
+    for m in messages or []:
+        role = m.get("role")
+        if role in ("user", "assistant") and isinstance(m.get("content", ""), str):
+            out.append({"role": role, "content": m.get("content", "")})
+    return out
+
+
+async def resolve_or_400(model_id: str) -> Tuple[ProviderConfig, ModelInfo]:
+    pid, _, name = (model_id or "").partition(":")
+    if not pid or not name:
+        raise HTTPException(400, "Pick a model first")
+    cfg, model = await registry.resolve(model_id)
+    if not cfg or not model:
+        raise HTTPException(400, "Model no longer available, pick another")
+    return cfg, model
+
+
+SAVE_EVERY = 2.0  # seconds: a crash loses at most this much of a streaming answer
+
+
+class Saver:
+    """Writes the assistant message to SQLite while it streams (every ~2 s and at the end).
+
+    The page passes {"save": {"conversation_id", "message_id"}}; the server owns the write, so a chat the
+    user switched away from keeps saving into its own conversation and nowhere else."""
+
+    def __init__(self, save: dict, model_full_id: str):
+        self.cid = str((save or {}).get("conversation_id") or "")
+        self.mid = str((save or {}).get("message_id") or "")
+        self.on = bool(self.cid and self.mid)
+        self.model = model_full_id
+        self.content, self.thinking, self.notes, self.error = [], [], [], ""
+        self.meta: dict = {}
+        self.shield = None  # set when the Privacy Shield masked this request: answers are saved with real values
+        self.t0 = time.monotonic()
+        self.last = 0.0
+
+    def add(self, ev: dict):
+        if "content" in ev:
+            self.content.append(ev["content"])
+        if "thinking" in ev:
+            self.thinking.append(ev["thinking"])
+        if "note" in ev:
+            self.notes.append(ev["note"])
+        if "error" in ev:
+            self.error = ev["error"]
+
+    def write(self, final: bool = False, stopped: bool = False):
+        if not self.on:
+            return
+        now = time.monotonic()
+        if not final and now - self.last < SAVE_EVERY:
+            return
+        self.last = now
+        text = "".join(self.content)
+        thinking = "".join(self.thinking)
+        if self.shield:
+            text, thinking = self.shield.unmask(text), self.shield.unmask(thinking)
+        if self.error:
+            text = (text + "\n\n" if text else "") + self.error
+        meta = {**self.meta, "notes": self.notes, "error": bool(self.error), "elapsed": round(now - self.t0, 2),
+                "live": not final}
+        if stopped:
+            meta["stopped"] = True
+        try:
+            from haven import storage
+
+            storage.get().upsert_message(self.cid, {"id": self.mid, "role": "assistant", "content": text,
+                                                    "thinking": thinking, "model": self.model, "meta": meta})
+        except Exception:
+            log_error(traceback.format_exc())
+
+
+def shield_enabled() -> bool:
+    return bool(keystore.get_setting("shield", True))
+
+
+async def stream(cfg: ProviderConfig, model: ModelInfo, payload: dict) -> AsyncIterator[str]:
+    files = media.decode_files(payload.get("files"))
+    messages = clean_history(payload.get("messages"))
+    system = payload.get("system") or DEFAULT_SYSTEM
+    think = bool(payload.get("think", False))
+    whole = bool(payload.get("whole", False))
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    adapter = registry.ADAPTERS[cfg.style]
+    done = {"done": True}
+    saver = Saver(payload.get("save"), model.full_id)
+    finished = False
+    shield_on = not cfg.local and shield_enabled()
+
+    def out(ev: dict) -> str:
+        saver.add(ev)
+        saver.write()
+        return json.dumps(ev, ensure_ascii=False) + "\n"
+
+    try:
+        prep = await asyncio.to_thread(prepare, cfg, model, files, question, whole)
+        if shield_on and prep.uncheckable and not payload.get("shield_ok"):
+            # ask once per conversation; nothing was sent and nothing is saved
+            names = ", ".join(f"'{n}'" for n in prep.uncheckable[:3])
+            finished = True
+            saver.on = False
+            yield line(confirm=f"{names} can't be checked for personal details (images and scans can't be read by the "
+                               f"Privacy Shield). Send to {cfg.name} anyway?")
+            yield json.dumps(done) + "\n"
+            return
+        saver.write(final=False)  # the row exists from the first moment
+        if prep.pages:
+            saver.meta.update({"pages": prep.pages, "previews": prep.previews})
+            yield out({"docs": {"pages": prep.pages, "previews": prep.previews}})
+        for n in prep.notes:
+            yield out({"note": n})
+        if prep.blocks:
+            for m in reversed(messages):
+                if m["role"] == "user":
+                    m["content"] = "\n\n".join(prep.blocks) + "\n\n" + m["content"]
+                    break
+        if prep.cited:
+            system = system + "\n\n" + CITE_SYSTEM
+        parts = prep.parts
+        if shield_on:
+            sh = Shield()
+            messages = [{**m, "content": sh.mask(m["content"])} for m in messages]
+            system = sh.mask(system)
+            saver.shield = sh
+            summary = sh.summary(cfg.name)
+            if summary:  # the map stays on this PC: the page (localhost) uses it to show real values
+                yield out({"note": summary, "unmask": sh.values})
+            if prep.uncheckable:
+                yield out({"note": f"Sent without checking (Privacy Shield can't read images or scans): {', '.join(prep.uncheckable)}."})
+        elif not cfg.local:
+            yield out({"note": f"Privacy Shield is off: messages and files go to {cfg.name} as written."})
+        try:
+            async for ev in adapter.stream_chat(cfg, model, messages, parts, system, think):
+                if ev.get("done"):
+                    done = ev
+                    continue
+                yield out(ev)
+        except ProviderError as e:
+            yield out({"error": redact(e.message, cfg.secrets())})
+        except (asyncio.CancelledError, GeneratorExit):
+            raise
+        except Exception as e:
+            log_error(traceback.format_exc(), cfg.secrets())
+            yield out({"error": f"Something went wrong ({type(e).__name__}). Details are in errors.log."})
+        saver.meta.update({k: done[k] for k in ("speed", "usage") if k in done})
+        saver.write(final=True)
+        finished = True
+        yield json.dumps(done, ensure_ascii=False) + "\n"
+    finally:
+        if not finished:  # stopped by the user (or the window closed): keep what arrived
+            saver.write(final=True, stopped=True)

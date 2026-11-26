@@ -149,6 +149,20 @@ def _pdf_text(data: bytes) -> str:
     return "\n\n".join((p.extract_text() or "").strip() for p in r.pages)
 
 
+def _check_pdf(name: str, data: bytes):
+    """Empty, corrupt or password-protected PDFs become a clear message instead of a crash."""
+    from pypdf import PdfReader
+
+    try:
+        r = PdfReader(io.BytesIO(data))
+        if r.is_encrypted and not r.decrypt(""):
+            raise ValueError("encrypted")
+        if not len(r.pages):
+            raise ValueError("no pages")
+    except Exception:
+        raise ConvertError(f"'{name}' is not a readable PDF (or it is password-protected)")
+
+
 def _md_to_html(text: str, title: str) -> str:
     import markdown
 
@@ -225,6 +239,7 @@ def convert_one(name: str, data: bytes, to: str, so: str = None):
         return [(out, _ffmpeg(data, src, to))]
     # pdf
     if src == "pdf":
+        _check_pdf(name, data)
         if to in ("png", "jpg", "webp"):
             return _pdf_pages(data, to, stem)
         text = _pdf_text(data)

@@ -2,12 +2,11 @@
 
 * Listens on 127.0.0.1 only; every /api call needs the per-launch token,
   so websites open in your browser cannot talk to it.
-* Local AI goes to Ollama on this PC. Gemini is used only when you pick it,
-  with the key stored in %APPDATA%\\Haven\\settings.json (never in the code).
-* Files are processed on this PC and never uploaded (except to Gemini when
-  you explicitly choose a Gemini model).
+* AI goes to whichever provider you pick: local ones (Ollama, LM Studio) never leave this PC;
+  cloud keys live in Windows Credential Manager (see haven/providers/keystore.py).
+* Files are processed on this PC and never uploaded (except to a cloud model you explicitly pick).
 """
-import base64
+import asyncio
 import glob
 import io
 import json
@@ -15,19 +14,26 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+import traceback
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
 
-import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
+from haven import chat, storage
 from haven import convert as conv
+from haven.media import TEXT_EXT, decode_files, guess_mime, normalize_image, render_pdf_pages  # noqa: F401 (re-exported)
+from haven.providers import keystore, registry
+from haven.providers import ollama as ollama_adapter
+from haven.providers.base import ProviderError, redact
 
 try:  # optional: iPhone HEIC photos
     from pillow_heif import register_heif_opener
@@ -36,80 +42,122 @@ try:  # optional: iPhone HEIC photos
 except Exception:
     pass
 
-VERSION = "0.9.0"
+VERSION = "1.0.0"
 WEB = Path(__file__).parent / "web"
-OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-GEMINI = os.environ.get("GEMINI_BASE", "https://generativelanguage.googleapis.com")
 TOKEN = os.environ.get("HAVEN_TOKEN", "")  # set by app.py for each launch
-LOCAL_TEXT_LIMIT = 20000  # chars of PDF text sent to the small local model (~5k tokens)
-GEMINI_INLINE_LIMIT = 18 * 1024 * 1024
 RESULTS = {}  # id -> (filename, bytes): finished files waiting for the native Save dialog
 
-app = FastAPI(title="Haven", docs_url=None, redoc_url=None, openapi_url=None)
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = None
+    if not os.environ.get("HAVEN_NO_POLL"):
+        task = asyncio.ensure_future(registry.poll_forever())  # local providers, every 20 s, never blocks
+    yield
+    if task:
+        task.cancel()
+    storage.close()
+
+
+app = FastAPI(title="Haven", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+
+def log_error(text: str):
+    chat.log_error(text)
+
+
 @app.exception_handler(Exception)
 async def show_error(request: Request, exc: Exception):
-    import traceback
-
-    try:
-        (Path(os.environ.get("HAVEN_LOG_DIR") or config_dir()) / "errors.log").open("a", encoding="utf-8").write(traceback.format_exc() + "\n")
-    except Exception:
-        pass
-    return JSONResponse({"detail": f"{type(exc).__name__}: {exc}"}, status_code=500)
+    log_error(traceback.format_exc())
+    return JSONResponse({"detail": redact(f"{type(exc).__name__}: {exc}")}, status_code=500)
 
 
 app.mount("/fonts", StaticFiles(directory=WEB / "fonts"), name="fonts")
+app.mount("/web", StaticFiles(directory=WEB), name="web")  # app.js, md.js (no CDN: everything is local)
 
 
 # ---------------- settings ----------------
 def config_dir() -> Path:
-    base = os.environ.get("APPDATA") or str(Path.home() / ".config")
-    d = Path(base) / "Haven"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return keystore.config_dir()
 
 
 def load_settings() -> dict:
-    try:
-        return json.loads((config_dir() / "settings.json").read_text("utf-8"))
-    except Exception:
-        return {}
+    return keystore.load()
 
 
 def save_settings(s: dict):
-    (config_dir() / "settings.json").write_text(json.dumps(s, indent=2), "utf-8")
+    keystore.save_raw(s)
+
+
+def gemini_entry():
+    """The first enabled Gemini provider (saved or from the environment), or None."""
+    for e, cfg in registry.configured():
+        if cfg.kind == "gemini":
+            return e, cfg
+    return None
 
 
 def gemini_key() -> str:
-    return os.environ.get("GEMINI_API_KEY") or load_settings().get("gemini_key", "")
+    g = gemini_entry()
+    return g[1].key if g else ""
 
 
 # ---------------- security + desktop save ----------------
-@app.middleware("http")
-async def guard(request: Request, call_next):
-    path = request.url.path
-    if path.startswith("/api/") and TOKEN and request.headers.get("x-desk-token") != TOKEN:
-        return JSONResponse({"detail": "Forbidden"}, status_code=403)
-    try:
-        response = await call_next(request)
-    except Exception as exc:  # never show a bare "Internal Server Error"
-        import traceback
+class Guard:
+    """Pure ASGI middleware: token check, error safety net, and the X-Desk-Store result cache.
+    (Pure ASGI rather than @app.middleware so streaming responses see client disconnects at once.)"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        hdrs = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+        if scope["path"].startswith("/api/") and TOKEN and hdrs.get("x-desk-token") != TOKEN:
+            return await JSONResponse({"detail": "Forbidden"}, status_code=403)(scope, receive, send)
+        store = hdrs.get("x-desk-store") == "1"
+        started = False
+        captured = {"status": 0, "headers": [], "body": []}
+
+        async def send_wrapped(msg):
+            nonlocal started
+            if store:
+                if msg["type"] == "http.response.start":
+                    captured["status"], captured["headers"] = msg["status"], msg.get("headers", [])
+                elif msg["type"] == "http.response.body":
+                    captured["body"].append(msg.get("body", b""))
+                return
+            if msg["type"] == "http.response.start":
+                started = True
+            await send(msg)
 
         try:
-            (Path(os.environ.get("HAVEN_LOG_DIR") or config_dir()) / "errors.log").open("a", encoding="utf-8").write(traceback.format_exc() + "\n")
-        except Exception:
-            pass
-        return JSONResponse({"detail": f"{type(exc).__name__}: {exc}"}, status_code=500)
-    # In the desktop window, finished files are kept here and saved via a native Save dialog
-    if request.headers.get("x-desk-store") == "1" and response.status_code == 200:
-        body = b"".join([chunk async for chunk in response.body_iterator])
-        cd = response.headers.get("content-disposition", "")
+            await self.app(scope, receive, send_wrapped)
+        except Exception as exc:  # never show a bare "Internal Server Error"
+            log_error(traceback.format_exc())
+            if started:
+                return
+            return await JSONResponse({"detail": redact(f"{type(exc).__name__}: {exc}")}, status_code=500)(scope, receive, send)
+        if not store:
+            return
+        body = b"".join(captured["body"])
+        rh = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in captured["headers"]}
+        if captured["status"] != 200:
+            await send({"type": "http.response.start", "status": captured["status"], "headers": captured["headers"]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        # In the desktop window, finished files are kept here and saved via a native Save dialog
+        cd = rh.get("content-disposition", "")
         name = cd.split('filename="')[-1].rstrip('"') if "filename=" in cd else "result"
         rid = uuid.uuid4().hex
         RESULTS[rid] = (name, body)
         while len(RESULTS) > 10:
             RESULTS.pop(next(iter(RESULTS)))
-        return JSONResponse({"id": rid, "name": name, "size": len(body), "info": response.headers.get("x-info", "")})
-    return response
+        await JSONResponse({"id": rid, "name": name, "size": len(body), "info": rh.get("x-info", "")})(scope, receive, send)
+
+
+app.add_middleware(Guard)
 
 
 # ---------------- helpers ----------------
@@ -179,8 +227,9 @@ def parse_pages(spec: str, total: int) -> List[int]:
 def open_pdf(data: bytes, name: str = "file") -> PdfReader:
     try:
         r = PdfReader(io.BytesIO(data))
-        if r.is_encrypted:
-            r.decrypt("")
+        if r.is_encrypted and not r.decrypt(""):  # needs a password we don't have
+            raise ValueError("encrypted")
+        len(r.pages)  # fail here (clean 400) rather than later in the tool (500)
         return r
     except Exception:
         raise HTTPException(400, f"'{name}' is not a readable PDF (or it is password-protected)")
@@ -196,216 +245,6 @@ def pdf_bytes(writer: PdfWriter) -> bytes:
     return buf.getvalue()
 
 
-def render_pdf_pages(data: bytes, max_pages: int = 4, scale: float = 1.5) -> List[bytes]:
-    import pypdfium2 as pdfium
-
-    doc = pdfium.PdfDocument(data)
-    out = []
-    for i in range(min(len(doc), max_pages)):
-        im = doc[i].render(scale=scale).to_pil().convert("RGB")
-        buf = io.BytesIO()
-        im.save(buf, "JPEG", quality=85)
-        out.append(buf.getvalue())
-    doc.close()
-    return out
-
-
-TEXT_EXT = {".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".html", ".css", ".java", ".c", ".cpp", ".sql", ".tex", ".log", ".xml", ".yaml", ".yml"}
-
-
-def guess_mime(name: str, mime: str) -> str:
-    ext = Path(name).suffix.lower()
-    if ext == ".pdf":
-        return "application/pdf"
-    if ext in (".jpg", ".jpeg"):
-        return "image/jpeg"
-    if ext in (".png", ".webp", ".gif", ".heic", ".heif"):
-        return "image/" + ext[1:]
-    if ext in TEXT_EXT:
-        return "text/plain"
-    return mime or "application/octet-stream"
-
-
-def decode_files(files) -> List[dict]:
-    out = []
-    for f in files or []:
-        try:
-            data = base64.b64decode(f.get("data", ""))
-        except Exception:
-            raise HTTPException(400, f"Could not read attachment {f.get('name')}")
-        out.append({"name": f.get("name", "file"), "mime": guess_mime(f.get("name", ""), f.get("mime", "")), "data": data})
-    return out
-
-
-def normalize_image(data: bytes) -> bytes:
-    """Any image (incl. HEIC/WebP) -> JPEG/PNG bytes most models accept."""
-    im = Image.open(io.BytesIO(data))
-    im.load()
-    if max(im.size) > 2000:
-        im.thumbnail((2000, 2000))
-    buf = io.BytesIO()
-    if im.mode in ("RGBA", "LA", "P"):
-        im.convert("RGBA").save(buf, "PNG")
-    else:
-        im.convert("RGB").save(buf, "JPEG", quality=90)
-    return buf.getvalue()
-
-
-# ---------------- providers ----------------
-def ollama_messages(messages, files):
-    """Attach files to the last user message in Ollama's format."""
-    msgs = [{"role": m["role"], "content": m.get("content", "")} for m in messages]
-    if not files:
-        return msgs, []
-    notes, images, extra_text = [], [], []
-    for f in files:
-        if f["mime"].startswith("image/"):
-            images.append(base64.b64encode(normalize_image(f["data"])).decode())
-        elif f["mime"] == "application/pdf":
-            r = open_pdf(f["data"], f["name"])
-            text = "\n\n".join(f"[Page {i + 1}]\n{(p.extract_text() or '').strip()}" for i, p in enumerate(r.pages))
-            if len(text.replace("[Page", "").strip()) < 40 * max(1, len(r.pages)):  # scanned PDF -> look at it
-                pages = render_pdf_pages(f["data"], max_pages=3)
-                images += [base64.b64encode(p).decode() for p in pages]
-                notes.append(f"'{f['name']}' looks scanned; the model sees images of its first {len(pages)} page(s).")
-            else:
-                if len(text) > LOCAL_TEXT_LIMIT:
-                    notes.append(f"'{f['name']}' is long; the local model only sees the first ~{LOCAL_TEXT_LIMIT // 1000}k characters. Use Gemini for the full document.")
-                    text = text[:LOCAL_TEXT_LIMIT]
-                extra_text.append(f"<document name=\"{f['name']}\">\n{text}\n</document>")
-        elif f["mime"] == "text/plain":
-            extra_text.append(f"<document name=\"{f['name']}\">\n{f['data'].decode('utf-8', 'ignore')[:LOCAL_TEXT_LIMIT]}\n</document>")
-        else:
-            notes.append(f"'{f['name']}' type isn't supported (convert it to PDF first).")
-    for m in reversed(msgs):
-        if m["role"] == "user":
-            if extra_text:
-                m["content"] = "\n\n".join(extra_text) + "\n\n" + m["content"]
-            if images:
-                m["images"] = images
-            break
-    return msgs, notes
-
-
-def gemini_body(messages, files, system, think):
-    contents = []
-    for m in messages:
-        contents.append({"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m.get("content", "") or " "}]})
-    if files:
-        total = sum(len(f["data"]) for f in files)
-        if total > GEMINI_INLINE_LIMIT:
-            raise HTTPException(400, "Attachments are over ~18 MB. Compress the PDF first.")
-        parts = []
-        for f in files:
-            if f["mime"].startswith("image/"):
-                img = normalize_image(f["data"])
-                mt = "image/png" if img[:4] == b"\x89PNG" else "image/jpeg"
-                parts.append({"inline_data": {"mime_type": mt, "data": base64.b64encode(img).decode()}})
-            elif f["mime"] == "application/pdf":
-                parts.append({"inline_data": {"mime_type": "application/pdf", "data": base64.b64encode(f["data"]).decode()}})
-            elif f["mime"] == "text/plain":
-                parts.append({"text": f"<document name=\"{f['name']}\">\n{f['data'].decode('utf-8', 'ignore')}\n</document>"})
-        for c in reversed(contents):
-            if c["role"] == "user":
-                c["parts"] = parts + c["parts"]
-                break
-    body = {"contents": contents}
-    if system:
-        body["systemInstruction"] = {"parts": [{"text": system}]}
-    if think:
-        body["generationConfig"] = {"thinkingConfig": {"includeThoughts": True}}
-    return body
-
-
-def line(**kw) -> str:
-    return json.dumps(kw) + "\n"
-
-
-async def stream_ollama(model, messages, files, system, think):
-    msgs, notes = ollama_messages(messages, files)
-    if system:
-        msgs = [{"role": "system", "content": system}] + msgs
-    for n in notes:
-        yield line(note=n)
-    body = {"model": model, "messages": msgs, "think": bool(think), "stream": True}
-    try:
-        async with httpx.AsyncClient(timeout=None) as c:
-            async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
-                if r.status_code != 200:
-                    err = (await r.aread()).decode(errors="ignore")
-                    if "does not support" in err and "image" in err:
-                        err = "This local model can't read images. Pick a vision model or use Gemini."
-                    yield line(error=err or f"Ollama returned {r.status_code}")
-                    return
-                async for ln in r.aiter_lines():
-                    if not ln.strip():
-                        continue
-                    j = json.loads(ln)
-                    msg = j.get("message", {})
-                    out = {}
-                    if msg.get("thinking"):
-                        out["thinking"] = msg["thinking"]
-                    if msg.get("content"):
-                        out["content"] = msg["content"]
-                    if j.get("done"):
-                        out["done"] = True
-                        if j.get("eval_count") and j.get("eval_duration"):
-                            out["speed"] = round(j["eval_count"] / (j["eval_duration"] / 1e9), 1)
-                    if out:
-                        yield line(**out)
-    except httpx.ConnectError:
-        yield line(error="Ollama is not running. Open Ollama from the Start menu and try again.")
-
-
-async def stream_gemini(model, messages, files, system, think):
-    key = gemini_key()
-    if not key:
-        yield line(error="No Gemini API key yet. Add it in Settings.")
-        return
-    model = model if model.startswith("models/") else f"models/{model}"
-    url = f"{GEMINI}/v1beta/{model}:streamGenerateContent?alt=sse"
-    body = gemini_body(messages, files, system, think)
-    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=15)) as c:
-            for attempt in (1, 2):
-                async with c.stream("POST", url, json=body, headers=headers) as r:
-                    if r.status_code != 200:
-                        raw = (await r.aread()).decode(errors="ignore")
-                        if r.status_code == 400 and "generationConfig" in body and attempt == 1:
-                            body.pop("generationConfig")  # model doesn't support thought summaries
-                            continue
-                        try:
-                            msg = json.loads(raw)["error"]["message"]
-                        except Exception:
-                            msg = raw[:300]
-                        if r.status_code in (401, 403):
-                            msg = "Gemini rejected the API key. Check it in Settings. (" + msg + ")"
-                        elif r.status_code == 429:
-                            msg = "Gemini free-tier limit reached. Wait a minute or switch to the local model. (" + msg + ")"
-                        yield line(error=msg)
-                        return
-                    async for ln in r.aiter_lines():
-                        if not ln.startswith("data:"):
-                            continue
-                        try:
-                            j = json.loads(ln[5:].strip())
-                        except Exception:
-                            continue
-                        for cand in j.get("candidates", [])[:1]:
-                            for p in cand.get("content", {}).get("parts", []):
-                                if "text" in p:
-                                    yield line(**({"thinking": p["text"]} if p.get("thought") else {"content": p["text"]}))
-                            if cand.get("finishReason") not in (None, "STOP", "MAX_TOKENS"):
-                                yield line(note=f"Gemini stopped: {cand['finishReason']}")
-                    yield line(done=True)
-                    return
-    except httpx.ConnectError:
-        yield line(error="Can't reach Gemini. Check your internet connection.")
-    except httpx.ReadTimeout:
-        yield line(error="Gemini took too long to answer. Try again.")
-
-
 # ---------------- pages + status ----------------
 @app.get("/")
 def index():
@@ -414,20 +253,15 @@ def index():
 
 @app.get("/api/status")
 async def status():
-    ollama_ok, models = False, []
-    try:
-        async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get(f"{OLLAMA}/api/tags")
-            ollama_ok = r.status_code == 200
-            models = [m["name"] for m in r.json().get("models", []) if not m["name"].endswith("cloud")]
-    except Exception:
-        pass
+    local = await registry.CACHE.local_status()
+    oll = local.get("ollama", {})
     s = load_settings()
     return {
         "version": VERSION,
-        "ollama": ollama_ok,
-        "models": models,
-        "gemini": bool(gemini_key()),
+        "ollama": bool(oll.get("ok")),
+        "models": [m.id for m in oll.get("models", [])],
+        "lmstudio": bool(local.get("lmstudio", {}).get("ok")),
+        "gemini": bool(gemini_entry()),
         "gemini_model": s.get("gemini_model", "gemini-2.5-flash"),
         "ghostscript": bool(ghostscript()),
         "libreoffice": bool(libreoffice()),
@@ -437,72 +271,219 @@ async def status():
 
 @app.get("/api/settings")
 def get_settings():
-    s, k = load_settings(), gemini_key()
+    s, g = load_settings(), gemini_entry()
+    k = g[1].key if g else ""
     return {
         "has_key": bool(k),
-        "key_hint": ("..." + k[-4:]) if k else "",
-        "key_from_env": bool(os.environ.get("GEMINI_API_KEY")),
+        "key_hint": keystore.hint(k),
+        "key_from_env": bool(g and g[0].get("storage") == "env"),
         "gemini_model": s.get("gemini_model", "gemini-2.5-flash"),
         "config_path": str(config_dir() / "settings.json"),
+        "storage": keystore.storage_mode(),
+        "shield": s.get("shield", True),
     }
 
 
 @app.post("/api/settings")
 def set_settings(payload: dict):
-    s = load_settings()
     if payload.get("clear_key"):
-        s.pop("gemini_key", None)
+        for p in keystore.saved():
+            if p["kind"] == "gemini":
+                keystore.remove(p["id"])
+                registry.CACHE.drop(p["id"])
     if payload.get("gemini_key"):
-        s["gemini_key"] = payload["gemini_key"].strip()
+        try:
+            key = registry.clean_key(payload["gemini_key"])
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not keystore.find_duplicate(key):
+            for p in keystore.saved():  # v0.9 had one Gemini key: replacing it keeps that behaviour
+                if p["kind"] == "gemini":
+                    keystore.remove(p["id"])
+                    registry.CACHE.drop(p["id"])
+            keystore.add("gemini", key, label="Gemini")
     if payload.get("gemini_model"):
-        s["gemini_model"] = payload["gemini_model"].replace("models/", "")
-    save_settings(s)
+        keystore.set_setting("gemini_model", payload["gemini_model"].replace("models/", ""))
+    if "shield" in payload:
+        keystore.set_setting("shield", bool(payload["shield"]))
     return get_settings()
 
 
 @app.get("/api/gemini/models")
 async def gemini_models():
-    key = gemini_key()
-    if not key:
+    g = gemini_entry()
+    if not g:
         raise HTTPException(400, "No Gemini API key saved")
     try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get(f"{GEMINI}/v1beta/models", params={"pageSize": 200}, headers={"x-goog-api-key": key})
-    except httpx.HTTPError:
-        raise HTTPException(502, "Can't reach Gemini. Check your internet connection.")
-    if r.status_code != 200:
-        raise HTTPException(400, "Gemini rejected the key: " + r.text[:200])
-    skip = ("embedding", "tts", "image-generation", "native-audio", "live", "aqa", "imagen", "veo", "robotics", "computer-use")
-    names = [m["name"].replace("models/", "") for m in r.json().get("models", [])
-             if "generateContent" in m.get("supportedGenerationMethods", []) and "gemini" in m["name"]
-             and not any(s in m["name"] for s in skip)]
-    names.sort(key=lambda n: (0 if "flash" in n else 1, "preview" in n or "exp" in n, n), reverse=False)
-    return {"models": names}
+        models = await registry.ADAPTERS["gemini"].list_models(g[1])
+    except ProviderError as e:
+        raise HTTPException(400, e.message)
+    return {"models": [m.id for m in models]}
+
+
+# ---------------- providers + models ----------------
+def provider_view(e: dict, cfg) -> dict:
+    st = registry.CACHE.mem.get(cfg.id, {})
+    return {"id": cfg.id, "kind": cfg.kind, "name": registry.name_of(cfg.kind), "label": e.get("label", ""),
+            "base_url": cfg.base_url if cfg.kind == "custom" or e.get("base_url") else "", "enabled": e.get("enabled", True),
+            "hint": e.get("hint", ""), "source": e.get("storage", "keyring"), "local": False,
+            "status": ("unavailable" if st.get("error") else "ok") if st else "unknown", "message": st.get("error", ""),
+            "model_count": len(st.get("models", []))}
+
+
+@app.get("/api/providers")
+async def providers_list():
+    registry.CACHE._load_disk()
+    local = await registry.CACHE.local_status()
+    out = []
+    for cfg in registry.local_configs():
+        st = local.get(cfg.id, {})
+        out.append({"id": cfg.id, "kind": cfg.kind, "name": cfg.name, "label": "", "base_url": cfg.base_url, "enabled": True,
+                    "hint": "", "source": "local", "local": True, "status": "ok" if st.get("ok") else "not running",
+                    "message": st.get("error", ""), "model_count": len(st.get("models", []))})
+    out += [provider_view(e, cfg) for e, cfg in registry.configured(include_disabled=True)]
+    mode = keystore.storage_mode()
+    return {"providers": out, "storage": mode,
+            "storage_note": "Stored in Windows Credential Manager" if mode == "keyring" else "Stored in a plain file on this PC",
+            "kinds": [{"kind": k, "name": n} for k, n, _s, _b, _p, loc in registry.TABLE if not loc]}
+
+
+@app.post("/api/providers")
+async def providers_add(payload: dict):
+    raw, kind = payload.get("key", ""), payload.get("provider") or None
+    base = payload.get("base_url", "") or ""
+    try:
+        key = registry.clean_key(raw)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if kind == "custom":
+        try:
+            base = registry.normalize_base(base)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    dup = keystore.find_duplicate(key, base if kind == "custom" else "")
+    if dup:
+        raise HTTPException(409, f"This key is already added ({registry.name_of(dup['kind'])}{', ' + dup['label'] if dup.get('label') else ''}).")
+    det = await registry.detect_provider(key, kind, base)
+    if not det.ok:
+        return JSONResponse({"detail": det.message, "unrecognised": det.unrecognised, "tried": det.tried}, status_code=400)
+    entry = keystore.add(det.kind, key, label=payload.get("label", "") or "", base_url=base if det.kind == "custom" else "")
+    cfg = registry.make_config(entry, key)
+    for m in det.models:  # the probe ran under the provider type's id; stamp this saved instance's id
+        m.provider = cfg.id
+    registry.CACHE.mem[cfg.id] = {"ts": time.time(), "sig": registry.CACHE.sig(cfg), "models": det.models, "error": ""}
+    registry.CACHE._save_disk()
+    return {"provider": provider_view(entry, cfg), "models": [m.to_dict() for m in det.models], "message": det.message}
+
+
+@app.patch("/api/providers/{pid}")
+async def providers_patch(pid: str, payload: dict):
+    changes = {k: payload.get(k) for k in ("label", "enabled", "extra_models")}
+    if payload.get("base_url") is not None:
+        try:
+            changes["base_url"] = registry.normalize_base(payload["base_url"]) if payload["base_url"] else ""
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if changes.get("extra_models") is not None:
+        changes["extra_models"] = [str(x).strip() for x in changes["extra_models"] if str(x).strip()]
+    if not keystore.update(pid, **changes):
+        raise HTTPException(404, "No such provider")
+    registry.CACHE.drop(pid)
+    for ent, cfg in registry.configured(include_disabled=True):
+        if cfg.id == pid:
+            return provider_view(ent, cfg)
+    raise HTTPException(404, "No such provider")
+
+
+@app.delete("/api/providers/{pid}")
+async def providers_delete(pid: str):
+    if not keystore.remove(pid):
+        raise HTTPException(404, "No such provider (keys from environment variables can't be removed here)")
+    registry.CACHE.drop(pid)
+    return {"ok": True}
+
+
+@app.get("/api/models")
+async def models(refresh: int = 0):
+    return await registry.all_models(bool(refresh))
+
+
+# ---------------- conversations (SQLite) ----------------
+def _store():
+    return storage.get()
+
+
+@app.get("/api/conversations")
+def conv_list():
+    return {"conversations": _store().list_convs()}
+
+
+@app.post("/api/conversations")
+def conv_create(payload: dict):
+    return _store().create_conv(str(payload.get("title") or ""), str(payload.get("model") or ""), payload.get("id") or None)
+
+
+@app.get("/api/conversations/search")
+def conv_search(q: str = ""):
+    return {"results": _store().search(q)}
+
+
+@app.post("/api/conversations/import")
+def conv_import(payload: dict):
+    msgs = payload.get("messages") or []
+    if not isinstance(msgs, list):
+        raise HTTPException(400, "messages must be a list")
+    return _store().import_conv(str(payload.get("title") or "Earlier chats"), msgs)
+
+
+@app.get("/api/conversations/{cid}")
+def conv_get(cid: str):
+    c = _store().get_conv(cid)
+    if not c:
+        raise HTTPException(404, "Conversation not found")
+    return c
+
+
+@app.patch("/api/conversations/{cid}")
+def conv_patch(cid: str, payload: dict):
+    c = _store().update_conv(cid, payload.get("title"), payload.get("model"))
+    if not c:
+        raise HTTPException(404, "Conversation not found")
+    return c
+
+
+@app.delete("/api/conversations/{cid}")
+def conv_delete(cid: str):
+    if not _store().delete_conv(cid):
+        raise HTTPException(404, "Conversation not found")
+    return {"ok": True}
+
+
+@app.post("/api/conversations/{cid}/messages")
+def conv_message(cid: str, payload: dict):
+    try:
+        return _store().upsert_message(cid, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/conversations/{cid}/truncate")
+def conv_truncate(cid: str, payload: dict):
+    return {"ok": True, "removed": _store().truncate(cid, str(payload.get("from_id") or ""))}
 
 
 # ---------------- AI ----------------
 @app.post("/api/chat")
-async def chat(payload: dict):
-    model = payload.get("model", "")
-    provider, _, name = model.partition(":")
-    if provider not in ("ollama", "gemini") or not name:
-        raise HTTPException(400, "Pick a model first")
-    files = decode_files(payload.get("files"))
-    messages = payload.get("messages", [])
-    args = (name, messages, files, payload.get("system"), payload.get("think", False))
-    gen = stream_ollama(*args) if provider == "ollama" else stream_gemini(*args)
-    return StreamingResponse(gen, media_type="application/x-ndjson")
+async def chat_endpoint(payload: dict):
+    cfg, model = await chat.resolve_or_400(payload.get("model", ""))
+    return chat.LiveStream(chat.stream(cfg, model, payload), media_type="application/x-ndjson")
 
 
 @app.post("/api/unload")
 async def unload(payload: dict):
     model = payload.get("model", "")
     if model.startswith("ollama:"):
-        try:
-            async with httpx.AsyncClient(timeout=10) as c:
-                await c.post(f"{OLLAMA}/api/generate", json={"model": model[7:], "keep_alive": 0})
-        except Exception:
-            pass
+        await ollama_adapter.unload(registry.local_configs()[0], model[7:])
     return {"ok": True}
 
 

@@ -130,7 +130,7 @@ def main():
         js_api=Api(),
         width=1280,
         height=820,
-        min_size=(900, 600),
+        min_size=(800, 600),
         background_color="#F5F7FC",
     )
     window.events.shown += lambda: _set_window_icon(window)
