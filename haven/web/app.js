@@ -56,6 +56,7 @@ const P = {
   plus:'<path d="M12 5v14M5 12h14"/>', regen:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
   key:'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M15 8l2 2"/>', lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   dl:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', ext:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   shield:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
   shieldoff:'<path d="M12 3 4 6v6c0 4.4 3.4 8.3 8 9 4.6-.7 8-4.6 8-9V6z"/><path d="M4 4l16 16"/>'
 };
@@ -64,7 +65,7 @@ const archW = s => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="no
 $('#mark').innerHTML = archW(16); $('#heroarch').innerHTML = archW(32); $('#droparch').innerHTML = archW(28);
 [['#b-search','search'],['#b-gear','gear'],['#b-attach','clip'],['#b-close','x'],['#palicon','search'],['#ic-keys','key'],['#ic-ext','puzzle'],
  ['#b-side','side'],['#b-side-close','side'],['#ic-new','plus'],['#ic-cq','search'],['#ic-pq','search'],['#pillchev','chev'],['#tobottom','down'],
- ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
+ ['#ic-editing','edit'],['#b-new','edit'],['#ic-shield','shield'],['#ic-about','info']].forEach(([s, n]) => { const el = $(s); if (el) el.innerHTML = ic(n); });
 $('#think').innerHTML = ic('bulb') + 'Think';
 $('#send').innerHTML = ic('up');
 
@@ -73,10 +74,11 @@ const S = {
   models: [], providers: [], modelsLoaded: false,
   model: store.get('model2', ''), recent: store.get('recentModels', []),
   convs: [], conv: null, live: new Map(), editing: null, stick: true, gen: 0,
-  shield: true, shieldOk: store.get('shieldOk', {}),
+  shield: true, shieldOk: store.get('shieldOk', {}), catalog: [], kinds: [],
 };
 window.haven = S; // handy in DevTools (and for the UI tests)
-const minfo = id => S.models.find(m => m.full_id === id);
+const minfo = id => S.models.find(m => m.full_id === id) || S.catalog.find(m => m.full_id === id);
+const kindInfo = k => S.kinds.find(x => x.kind === k) || {name: k};
 const curInfo = () => minfo(S.model);
 const provOf = pid => S.providers.find(p => p.id === pid);
 const isCloud = () => { const m = curInfo(); return !!m && !m.local; };
@@ -86,30 +88,30 @@ const modelLabel = id => { const m = minfo(id); return m ? m.label : (id || '').
 async function refreshModels(refresh = false){
   try{
     const j = await jget('/api/models' + (refresh ? '?refresh=1' : ''));
-    S.models = j.models; S.providers = j.providers; S.modelsLoaded = true;
-    S.models.forEach(m => { m._q = (m.label + ' ' + m.id + ' ' + ((provOf(m.provider) || {}).name || '')).toLowerCase(); });
+    S.models = j.models; S.providers = j.providers; S.catalog = j.catalog || []; S.kinds = j.kinds || []; S.modelsLoaded = true;
+    for (const m of S.models.concat(S.catalog)) m._q = (m.label + ' ' + m.id + ' ' + kindInfo(m.kind).name + ' ' + ((provOf(m.provider) || {}).label || '')).toLowerCase();
   }catch{ /* server busy: keep the last list */ }
-  if (!S.model && S.models.length) S.model = (S.recent.find(minfo) || (S.models.find(m => m.local) || S.models[0]).full_id);
+  if (!S.model && S.models.length) S.model = (S.recent.find(id => S.models.some(m => m.full_id === id)) || (S.models.find(m => m.local) || S.models[0]).full_id);
   paintModel();
   if (!$('#picker').hidden) renderPicker();
 }
 function paintModel(){
   const m = curInfo(), pill = $('#pill');
-  pill.className = 'pill' + (!m ? ' none' : m.local ? '' : ' cloud');
-  $('#pillname').textContent = m ? m.label : (S.model ? modelLabel(S.model) : 'No model');
-  $('#tag').textContent = !m ? (S.model ? 'Unavailable' : 'Off') : m.local ? 'Private' : 'Cloud';
-  const p = m && provOf(m.provider);
+  pill.className = 'pill' + (!m ? ' none' : m.locked ? ' locked' : m.local ? '' : ' cloud');
+  $('#pillname').textContent = m ? m.label : (S.model ? modelLabel(S.model) : 'Pick a model');
+  $('#tag').textContent = !m ? (S.model ? 'Unavailable' : 'Off') : m.locked ? (m.local ? 'Not installed' : 'Needs key') : m.local ? 'Private' : 'Cloud';
+  const k = m && kindInfo(m.kind);
   $('#foot').classList.toggle('cloud', !!m && !m.local);
-  $('#foottxt').textContent = !m ? 'No model selected' : m.local ? 'Running on this laptop' : `Using ${p ? p.name : 'a cloud model'}, so messages and files go there`;
+  $('#foottxt').textContent = !m ? 'No model selected' : m.local ? 'Running on this laptop' : `Using ${k ? k.name : 'a cloud model'}, so messages and files go there`;
   paintShield();
   const th = $('#think');
-  th.hidden = !m || m.think === 'no';
+  th.hidden = !m || m.locked || m.think === 'no';
   th.title = m && m.think === 'always' ? 'This model always thinks. On: show its thinking.' : 'Think it through first (slower)';
   updateNotice(); paintEmpty();
 }
 function paintShield(){
   const b = $('#shield'), m = curInfo();
-  b.hidden = !m || m.local;
+  b.hidden = !m || m.local || m.locked;
   b.setAttribute('aria-pressed', String(S.shield));
   b.innerHTML = ic(S.shield ? 'shield' : 'shieldoff') + (S.shield ? 'Shield on' : 'Shield off');
   b.title = S.shield ? 'Privacy Shield is on: phone numbers, emails, PAN, Aadhaar, card and bank details are hidden before sending to the cloud'
@@ -121,17 +123,28 @@ async function setShield(on){
   try{ await jpost('/api/settings', {shield: on}); }catch{}
   toast(on ? 'Privacy Shield on' : 'Privacy Shield off');
 }
+let noticeAct = null;
 function updateNotice(){
-  const n = $('#notice');
-  if (!S.modelsLoaded || !S.model || curInfo()){ n.hidden = true; return; }
-  const pid = S.model.split(':')[0], p = provOf(pid);
-  $('#noticetxt').textContent = p && p.local && p.status !== 'ok' ? `${p.name} isn't running. Start it, or pick another model.` : 'Model no longer available, pick another.';
-  n.hidden = false;
+  const n = $('#notice'), m = curInfo();
+  const show = (txt, label, act) => { $('#noticetxt').textContent = txt; $('#noticebtn').textContent = label; noticeAct = act; n.hidden = false; };
+  if (!S.modelsLoaded || !S.model){ n.hidden = true; return; }
+  if (m && m.locked){
+    if (!m.local) return show(`${m.label} needs ${an(kindInfo(m.kind).name)} API key. Add one to use it, or pick another model.`, `Add ${kindInfo(m.kind).name} key`, () => openSheet('models', m.kind));
+    const oll = provOf('ollama');
+    if (oll && oll.status === 'ok') return show(`${m.label} isn't downloaded yet. In a terminal, run: ollama pull ${m.id}`, 'Copy command', () => { navigator.clipboard.writeText('ollama pull ' + m.id); toast('Copied'); });
+    return show(`${m.label} runs on this PC with Ollama, which isn't running. Start Ollama, then run: ollama pull ${m.id}`, 'Get Ollama', () => openExt('https://ollama.com/download'));
+  }
+  if (m){ n.hidden = true; return; }
+  const p = provOf(S.model.split(':')[0]);
+  if (p && p.local && p.status !== 'ok') return show(`${p.name} isn't running. Start it, or pick another model.`, 'Pick a model', openPicker);
+  show('Model no longer available, pick another.', 'Pick a model', openPicker);
 }
+const an = w => (/^(?:[AEIOU]|xAI|LM)/i.test(w) ? 'an ' : 'a ') + w;
+const openExt = u => desktop() ? window.pywebview.api.open_url(u) : window.open(u, '_blank', 'noopener');
 function setModel(id){
   S.model = id; store.set('model2', id);
   paintModel();
-  if (S.conv) jpost(`/api/conversations/${S.conv.id}`, {model: id}, 'PATCH');
+  if (S.conv && minfo(id) && !minfo(id).locked) jpost(`/api/conversations/${S.conv.id}`, {model: id}, 'PATCH');
 }
 let pk = 0, pitemsM = [];
 function openPicker(){
@@ -148,40 +161,77 @@ function closePicker(){ $('#picker').hidden = true; }
 function renderPicker(){
   const t0 = performance.now();
   const q = $('#pq').value.toLowerCase().trim(), toks = q.split(/\s+/).filter(Boolean);
-  const hit = m => toks.every(t => m._q.includes(t));
+  const hit = m => !toks.length || toks.every(t => m._q.includes(t));
   const LIMIT = 300; let shown = 0, more = 0;
   pitemsM = [];
-  let html = '';
-  const item = (m, grp) => {
+  const item = (m, recent) => {
     if (shown >= LIMIT){ more++; return ''; }
     shown++; const k = pitemsM.length; pitemsM.push(m.full_id);
-    const p = provOf(m.provider) || {};
-    return `<li class="m ${k === pk ? 'on' : ''} ${m.full_id === S.model ? 'cur' : ''}" role="option" data-k="${k}">`
-      + `<span class="n">${esc(m.label)}${m.label !== m.id ? `<span class="sub"> · ${esc(m.id)}</span>` : ''}</span>`
+    const cur = m.full_id === S.model;
+    return `<li class="m ${k === pk ? 'on' : ''} ${cur ? 'cur' : ''} ${m.locked ? 'locked' : ''}" role="option" data-k="${k}">`
+      + `<span class="n">${esc(m.label)}${!m.locked && m.label !== m.id ? `<span class="sub"> · ${esc(m.id)}</span>` : ''}</span>`
+      + (m.locked && m.note ? `<span class="pnote">${esc(m.note)}</span>` : '')
+      + (m.issue ? `<span class="pnote warn" title="This model failed recently">${esc(m.issue)}</span>` : '')
       + (m.vision ? `<span title="Can see images">${ic('eye')}</span>` : '') + (m.think !== 'no' ? `<span title="Can think">${ic('bulb')}</span>` : '')
-      + `<span class="badge ${m.local ? 'private' : 'cloud'}">${m.local ? 'Private' : 'Cloud'}</span>`
-      + (grp === 'recent' ? `<span class="sub">${esc(p.name || '')}</span>` : '') + `</li>`;
+      + (m.locked ? `<span title="${m.local ? 'Not downloaded yet' : 'Needs a key'}">${ic('lock')}</span>`
+                  : `<span class="badge ${m.local ? 'private' : 'cloud'}">${m.local ? 'Private' : 'Cloud'}</span>`)
+      + (recent ? `<span class="sub">${esc(kindInfo(m.kind).name)}</span>` : '') + `</li>`;
   };
+  let html = '';
   if (!q){
-    const rec = S.recent.map(minfo).filter(Boolean).slice(0, 3);
-    if (rec.length) html += `<li class="grp">Recent</li>` + rec.map(m => item(m, 'recent')).join('');
+    const rec = S.recent.map(id => S.models.find(m => m.full_id === id)).filter(Boolean).slice(0, 3);
+    if (rec.length) html += `<li class="grp">Recent</li>` + rec.map(m => item(m, true)).join('');
   }
+  // 1) what you can use right now: local providers, then connected cloud keys
   for (const p of S.providers){
-    const ms = S.models.filter(m => m.provider === p.id && (!toks.length || hit(m)));
-    const st = p.status === 'ok' ? '' : p.status === 'not running' ? 'not running' : 'unavailable' + (p.message ? ' – ' + p.message : '');
-    if (!ms.length && (q || (p.local && p.status !== 'ok' && !S.models.some(m => m.provider === p.id) && p.id !== 'ollama'))) continue;
-    html += `<li class="grp">${esc(p.label || p.name)}<span class="pst">${esc(st)}</span></li>`;
-    if (!ms.length && p.id === 'ollama' && p.status !== 'ok') html += `<li class="more">Open Ollama to use private models on this PC.</li>`;
-    html += ms.map(m => item(m)).join('');
+    const ms = S.models.filter(m => m.provider === p.id && hit(m));
+    if (p.local){
+      if (!ms.length && p.id !== 'ollama') continue;
+      if (!ms.length && q && !S.catalog.some(m => m.kind === 'ollama' && hit(m))) continue;
+      const st = p.status === 'ok' ? '' : 'not running';
+      html += `<li class="grp">${esc(p.name)}<span class="pst">${st}</span></li>`;
+      if (ms.length) html += ms.map(m => item(m)).join('');
+      else {
+        if (!q) html += `<li class="more">${p.status === 'ok' ? 'Ollama has no models yet. Download one below.' : 'Ollama isn\'t running. Start it to chat privately on this PC.'}</li>`;
+        html += S.catalog.filter(m => m.kind === 'ollama' && hit(m)).map(m => item(m)).join('');
+      }
+      continue;
+    }
+    if (!ms.length && q) continue;
+    const st = p.status === 'ok' ? '' : 'unavailable' + (p.message ? ' – ' + p.message : '');
+    html += `<li class="grp">${esc(p.label ? kindInfo(p.kind).name + ' · ' + p.label : kindInfo(p.kind).name)}<span class="pst">${esc(st)}</span></li>`;
+    const pop = ms.filter(m => m.popular), rest = ms.filter(m => !m.popular);
+    html += pop.map(m => item(m)).join('');
+    if (pop.length && rest.length) html += `<li class="sub2">More ${esc(kindInfo(p.kind).name)} models</li>`;
+    html += rest.map(m => item(m)).join('');
+    if (!q) html += `<li class="addrow" data-addmodel="${esc(p.id)}" data-kind="${esc(p.kind)}">${ic('plus')}Add a model by name…</li>`;
   }
-  if (!pitemsM.length) html += `<li class="more">${q ? 'No model matches.' : 'No models yet. Start Ollama or add a key.'}</li>`;
+  // 2) popular models from providers you haven't connected yet
+  let lockedHtml = '';
+  for (const k of S.kinds){
+    if (k.local || k.connected || k.kind === 'custom') continue;
+    const ms = S.catalog.filter(m => m.kind === k.kind && hit(m));
+    if (q && !ms.length && !k.name.toLowerCase().includes(q)) continue;
+    lockedHtml += `<li class="grp">${esc(k.name)}<button class="addk" data-addkey="${esc(k.kind)}">Add key</button></li>`;
+    lockedHtml += ms.length ? ms.map(m => item(m)).join('')
+      : `<li class="addrow" data-addkey="${esc(k.kind)}">${ic('lock')}Add a ${esc(k.name)} key to see its models</li>`;
+  }
+  if (lockedHtml) html += `<li class="sep">Add a key to use these</li>` + lockedHtml;
+  if (!pitemsM.length && !lockedHtml) html += `<li class="more">No model matches “${esc(q)}”.</li>`;
   if (more) html += `<li class="more">${more} more. Keep typing to narrow it down.</li>`;
   $('#pl').innerHTML = html;
-  $('#pstat').textContent = `${S.models.length} models`;
+  const ready = S.models.length;
+  $('#pstat').textContent = ready ? `${ready} ready to use` : 'Nothing connected yet';
   const on = $('#pl .m.on'); if (on) on.scrollIntoView({block:'nearest'});
   S.pickerMs = performance.now() - t0;
 }
-function pickModel(k){ const id = pitemsM[k]; if (!id) return; closePicker(); setModel(id); useModel(id); toast(modelLabel(id)); $('#input').focus(); }
+function pickModel(k){
+  const id = pitemsM[k]; if (!id) return;
+  const m = minfo(id);
+  closePicker(); setModel(id);
+  if (m && !m.locked){ useModel(id); toast(m.label); }
+  $('#input').focus();
+}
 $('#pill').onclick = () => $('#picker').hidden ? openPicker() : closePicker();
 $('#pq').oninput = () => { pk = 0; renderPicker(); };
 $('#pq').onkeydown = e => {
@@ -190,10 +240,16 @@ $('#pq').onkeydown = e => {
   else if (e.key === 'Enter'){ pickModel(pk); e.preventDefault(); }
   else if (e.key === 'Escape'){ closePicker(); $('#pill').focus(); e.stopPropagation(); }
 };
-$('#pl').onclick = e => { const li = e.target.closest('li.m'); if (li) pickModel(+li.dataset.k); };
+$('#pl').onclick = e => {
+  const add = e.target.closest('[data-addkey]');
+  if (add){ closePicker(); return openSheet('models', add.dataset.addkey); }
+  const am = e.target.closest('[data-addmodel]');
+  if (am){ closePicker(); return openSheet('models', null, am.dataset.addmodel); }
+  const li = e.target.closest('li.m'); if (li) pickModel(+li.dataset.k);
+};
 $('#prefresh').onclick = async () => { $('#prefresh').disabled = true; await refreshModels(true); $('#prefresh').disabled = false; };
-$('#paddkey').onclick = () => { closePicker(); openSheet(true); };
-$('#noticebtn').onclick = openPicker;
+$('#paddkey').onclick = () => { closePicker(); openSheet('models'); };
+$('#noticebtn').onclick = () => noticeAct && noticeAct();
 
 /* ===================== conversations + sidebar ===================== */
 const DAY = 86400000;
@@ -323,7 +379,7 @@ function newChat(focus = true){
 $('#b-new').onclick = $('#b-new2').onclick = () => newChat();
 
 /* sidebar open/close (a drawer under 900px) */
-const narrow = () => innerWidth <= 900;
+const narrow = () => innerWidth <= 760;
 function toggleSide(){
   if (narrow()){ document.documentElement.classList.toggle('side-open'); return; }
   const off = document.documentElement.classList.toggle('side-off'); store.set('side', !off);
@@ -449,7 +505,7 @@ function paintDock(){
 function paintEmpty(){
   const noModels = S.modelsLoaded && !S.models.length;
   $('#onboard').hidden = !noModels;
-  $('#greet').innerHTML = files.length ? 'Ready <span>when you are</span>' : 'Drop a file <span>to get started</span>';
+  $('#greet').textContent = files.length ? (files.length === 1 ? 'What should I do with this file?' : 'What should I do with these files?') : 'What can I help with?';
   const chips = files.length
     ? [['Summarise this', () => run(ACT('summary'))], ['Key points', () => doc1() ? run(ACT('points')) : ask('List the key points of this.', 'Key points')],
        ['What dates and deadlines are in it?', () => ask('List every date, deadline and amount mentioned, with what each one is for.')], ['Ask a question about it', () => $('#input').focus()]]
@@ -713,7 +769,8 @@ function useModel(id){ S.recent = [id, ...S.recent.filter(x => x !== id)].slice(
 async function ask(prompt, label, system, opt = {}){
   if (liveHere()) return;
   const info = curInfo();
-  if (!S.model || !info){ if (S.modelsLoaded && !S.models.length){ toast('No model yet. Start Ollama or add a key in Settings.'); return; } updateNotice(); openPicker(); return; }
+  if (!S.model || !info){ if (S.modelsLoaded && !S.models.length && !S.catalog.length){ toast('No model yet. Start Ollama or add a key in Settings.'); return; } updateNotice(); openPicker(); return; }
+  if (info.locked){ updateNotice(); $('#notice').animate([{transform:'translateX(-6px)'}, {transform:'translateX(6px)'}, {transform:'none'}], {duration:240}); return; }
   let atts = [];
   try{ atts = await attachments(); }catch(e){ toast(e.message); return; }
   const conv = await ensureConv();
@@ -755,6 +812,7 @@ async function ask(prompt, label, system, opt = {}){
   if (am.confirm) return shieldConfirm(conv, am, prompt, label, system, opt);
   repaint(am);
   setBusyUI(); refreshTitle(conv);
+  if (am.meta.error) refreshModels(); // so the picker can warn about a model that just failed
 }
 async function shieldConfirm(conv, am, prompt, label, system, opt){
   const i = conv.messages.indexOf(am); if (i >= 0) conv.messages.splice(i, 1);
@@ -974,60 +1032,159 @@ document.addEventListener('mouseover', e => {
 $('#shield').onclick = () => setShield(!S.shield);
 
 /* ===================== settings ===================== */
-const st = (c, t) => `<span class="st ${c}">${esc(t)}</span>`;
-let KINDS = [];
-function openSheet(focusKey){ closePicker(); $('#sheet').classList.add('on'); $('#scrim').classList.add('on'); loadSettings(); if (focusKey) requestAnimationFrame(() => $('#nkey').focus()); }
+const HUE = {ollama:150, lmstudio:265, openai:160, anthropic:22, gemini:215, openrouter:250, groq:5, xai:0, deepseek:225, mistral:30, together:200, fireworks:15, cerebras:280, huggingface:45, custom:200};
+const mono = k => { const n = kindInfo(k).name || k, w = n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean);
+  const t = k === 'xai' ? 'xAI' : k === 'lmstudio' ? 'LM' : (w.length > 1 ? w[0][0] + w[1][0] : n.slice(0, 2)).toUpperCase();
+  return `<span class="mono" style="--h:${HUE[k] ?? 200}">${esc(t.length > 2 ? t.slice(0, 3) : t)}</span>`; };
+let SET = {providers: [], storage: 'keyring'};
+let openForm = null;
+function openSheet(tab = 'models', kind = null, addModelFor = null){
+  closePicker(); closePal();
+  $('#sheet').classList.add('on'); $('#scrim').classList.add('on');
+  showTab(tab); openForm = kind;
+  loadSettings().then(() => { if (kind) focusForm(kind); if (addModelFor) openAddModel(addModelFor); });
+}
 function closeSheet(){ $('#sheet').classList.remove('on'); if (!$('#pal').classList.contains('on')) $('#scrim').classList.remove('on'); }
+function showTab(t){
+  $$('.dlg .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $$('.dlg .tabp').forEach(p => p.hidden = p.dataset.p !== t);
+  $('#dlgbody').scrollTop = 0;
+}
+$$('.dlg .tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 $('#b-gear').onclick = () => openSheet(); $('#b-close').onclick = closeSheet;
-$('#ob-key').onclick = () => openSheet(true);
-$('#ob-ollama').onclick = () => desktop() ? window.pywebview.api.open_url('https://ollama.com/download') : window.open('https://ollama.com/download', '_blank', 'noopener');
+$('#ob-key').onclick = () => openSheet('models');
+$('#ob-ollama').onclick = () => openExt('https://ollama.com/download');
 $('#ob-retry').onclick = async () => { await refreshModels(true); toast(S.models.length ? `Found ${S.models.length} models` : 'Still no models'); };
+
+function keyLine(p){
+  const src = p.source === 'env' ? 'from environment (read-only)' : p.source === 'file' ? 'saved in a plain file' : 'saved in Credential Manager';
+  const st = !p.enabled ? 'turned off' : p.status === 'unavailable' ? (p.message || 'problem') : p.model_count ? `${p.model_count} models` : '';
+  return `<div class="pkey ${p.enabled ? '' : 'off'}" data-id="${esc(p.id)}"><span class="k">${esc(p.hint || '')}</span>`
+    + `<span class="grow">${esc([p.label, src, st].filter(Boolean).join(' · '))}</span>`
+    + (p.source === 'env' ? '' : `<button class="btn small ghost" data-tog="${esc(p.id)}">${p.enabled ? 'Turn off' : 'Turn on'}</button><button class="ib" data-del="${esc(p.id)}" title="Remove this key" aria-label="Remove this key">${ic('trash', 16)}</button>`)
+    + `</div>`
+    + (p.source === 'env' || !p.enabled ? '' : `<div class="xm" data-xm="${esc(p.id)}">`
+      + (p.extra_models || []).map(x => `<span class="xchip">${esc(x)}<button data-xdel="${esc(x)}" title="Remove" aria-label="Remove ${esc(x)}">${ic('x', 12)}</button></span>`).join('')
+      + `<button class="linkish" data-xadd="${esc(p.id)}">+ Add a model by name</button>`
+      + `<span class="xform" hidden><input class="fld" data-xin placeholder="Exact model id, e.g. gpt-6.2-sol" autocomplete="off" spellcheck="false"><button class="btn small" data-xsave="${esc(p.id)}">Add</button></span></div>`);
+}
+function openAddModel(pid){
+  const box = $(`.xm[data-xm="${CSS.escape(pid)}"]`); if (!box) return;
+  box.querySelector('[data-xadd]').hidden = true;
+  const f = box.querySelector('.xform'); f.hidden = false;
+  box.closest('.pcard').scrollIntoView({block:'nearest'});
+  f.querySelector('input').focus();
+}
+async function saveExtra(pid, list){
+  const r = await jpost('/api/providers/' + pid, {extra_models: list}, 'PATCH');
+  if (!r.ok){ toast(await errorOf(r)); return false; }
+  await refreshModels(true); await loadSettings(); return true;
+}
+function formHtml(k){
+  const info = kindInfo(k), custom = k === 'custom';
+  return `<div class="pform" data-form="${esc(k)}" hidden>`
+    + (custom ? `<div class="row"><input class="fld" data-f="base" placeholder="Server address, e.g. http://localhost:8000" autocomplete="off" spellcheck="false"></div>` : '')
+    + `<div class="row"><input class="fld" type="password" data-f="key" placeholder="${custom ? 'API key (leave empty if the server has none)' : `Paste your ${esc(info.name)} API key`}" autocomplete="off" spellcheck="false"></div>`
+    + `<div class="row"><input class="fld" data-f="label" placeholder="Label (optional), e.g. Personal or Work" autocomplete="off"><button class="btn primary" data-save="${esc(k)}">Connect</button><button class="btn ghost" data-cancel="${esc(k)}">Cancel</button></div>`
+    + `<div class="msg"></div>`
+    + (info.url && !custom ? `<div class="small">Don't have one? <a class="linkish" data-ext="${esc(info.url)}">Get ${esc(an(info.name))} key ${ic('ext', 12)}</a></div>` : '')
+    + `</div>`;
+}
+function provCard(k){
+  const info = kindInfo(k), keys = SET.providers.filter(p => !p.local && p.kind === k);
+  const on = keys.filter(p => p.enabled), bad = on.some(p => p.status === 'unavailable');
+  const stat = !keys.length ? '' : bad ? '<span class="stat warn">Check key</span>' : on.length ? '<span class="stat ok">Connected</span>' : '<span class="stat off">Off</span>';
+  return `<div class="pcard" data-kind="${esc(k)}"><div class="prow">${mono(k)}<div class="pinfo"><div class="pname">${esc(info.name)}${stat}</div><div class="pdesc">${esc(info.desc || '')}</div></div>`
+    + `<div class="pact"><button class="btn small ${keys.length ? 'ghost' : ''}" data-add="${esc(k)}">${keys.length ? 'Add another' : k === 'custom' ? 'Add server' : 'Add key'}</button></div></div>`
+    + keys.map(keyLine).join('') + formHtml(k) + `</div>`;
+}
+function localCard(p){
+  const info = kindInfo(p.kind), ok = p.status === 'ok';
+  return `<div class="pcard"><div class="prow">${mono(p.kind)}<div class="pinfo"><div class="pname">${esc(p.name)}<span class="stat ${ok ? 'ok' : 'off'}">${ok ? 'Running' : 'Not running'}</span></div>`
+    + `<div class="pdesc">${ok ? `${p.model_count} model${p.model_count === 1 ? '' : 's'} on this PC` : esc(info.desc || '')}</div></div>`
+    + `<div class="pact">${ok ? '' : `<button class="btn small ghost" data-retry="1">Check again</button><button class="btn small" data-ext="${esc(info.url || '')}">${esc(info.url_label || 'Download')}</button>`}</div></div></div>`;
+}
 async function loadSettings(){
-  let j;
-  try{ j = await jget('/api/providers'); }catch{ return; }
-  KINDS = j.kinds;
-  $('#nkind').innerHTML = '<option value="">Pick the provider…</option>' + KINDS.map(k => `<option value="${esc(k.kind)}">${esc(k.name)}</option>`).join('');
-  $('#provlist').innerHTML = j.providers.map(p => {
-    const sub = p.local ? (p.status === 'ok' ? `Running · ${p.model_count} models` : 'Not running') :
-      [p.hint, p.source === 'env' ? 'from environment (read-only)' : p.source === 'file' ? 'plain file' : 'Credential Manager',
-       p.status === 'unavailable' ? 'unavailable – ' + p.message : p.model_count ? p.model_count + ' models' : ''].filter(Boolean).join(' · ');
-    return `<div class="prov ${p.enabled ? '' : 'off'}" data-id="${esc(p.id)}"><span class="badge ${p.local ? 'private' : 'cloud'}">${p.local ? 'Private' : 'Cloud'}</span>`
-      + `<div class="grow"><div class="nm">${esc(p.name)}${p.label ? ' · ' + esc(p.label) : ''}</div><div class="sub">${st(p.local ? (p.status === 'ok' ? 'ok' : 'no') : p.status === 'unavailable' ? 'part' : 'cloud', sub)}</div></div>`
-      + (p.local || p.source === 'env' ? '' : `<button class="btn small ghost" data-tog="${esc(p.id)}">${p.enabled ? 'Turn off' : 'Turn on'}</button><button class="ib" data-del="${esc(p.id)}" title="Remove this key">${ic('trash', 16)}</button>`)
-      + `</div>`;
-  }).join('');
-  $('#storagenote').textContent = j.storage === 'keyring' ? 'Keys are kept in Windows Credential Manager on this PC and never shown again in full.' : 'Stored in a plain file on this PC (Windows Credential Manager isn\'t available).';
-  $$('#provlist [data-del]').forEach(b => b.onclick = async () => { if (!confirm('Remove this key from Haven?')) return; await api('/api/providers/' + b.dataset.del, {method:'DELETE'}); await refreshModels(); loadSettings(); toast('Key removed'); });
-  $$('#provlist [data-tog]').forEach(b => b.onclick = async () => { const p = j.providers.find(x => x.id === b.dataset.tog); await jpost('/api/providers/' + p.id, {enabled: !p.enabled}, 'PATCH'); await refreshModels(); loadSettings(); });
+  try{ SET = await jget('/api/providers'); }catch{ return; }
+  if (!S.kinds.length) await refreshModels();
+  $('#provlocal').innerHTML = SET.providers.filter(p => p.local).map(localCard).join('');
+  const kinds = S.kinds.filter(k => !k.local).map(k => k.kind);
+  $('#provlist').innerHTML = kinds.map(provCard).join('');
+  $('#storagenote').innerHTML = ic('lock') + (SET.storage === 'keyring' ? 'Keys are kept in Windows Credential Manager on this PC and are never shown again in full.'
+    : 'Windows Credential Manager isn\'t available, so keys are stored in a plain file on this PC.');
+  if (openForm) focusForm(openForm, true);
   $('#shieldtg').checked = S.shield;
   try{
-    const s = await jget('/api/status');
-    $('#gsstatus').innerHTML = s.ghostscript ? st('ok', 'Installed') : st('part', 'Not installed');
-    $('#lostatus').innerHTML = s.libreoffice ? st('ok', 'Installed') : st('part', 'Not installed');
-    $('#about').innerHTML = `Haven ${esc(s.version)}. <kbd>Ctrl</kbd> <kbd>K</kbd> tools, <kbd>Ctrl</kbd> <kbd>M</kbd> model, <kbd>Ctrl</kbd> <kbd>N</kbd> new chat, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd> search chats.`;
+    const [st, cfg] = await Promise.all([jget('/api/status'), jget('/api/settings')]);
+    $('#gsstatus').innerHTML = st.ghostscript ? '<span class="stat ok">Installed</span>' : '<span class="stat off">Not installed</span>';
+    $('#lostatus').innerHTML = st.libreoffice ? '<span class="stat ok">Installed</span>' : '<span class="stat off">Not installed</span>';
+    $('#about').textContent = `Haven ${st.version}. PDF and file tools with an AI assistant, running on your own PC.`;
+    $('#datapath').textContent = `In ${cfg.config_path.replace(/settings\.json$/, 'haven.db')} on this PC. Attached files aren't stored, only their names and sizes.`;
   }catch{}
 }
+function focusForm(k, keep){
+  $$('.pform').forEach(f => { if (f.dataset.form !== k) f.hidden = true; });
+  const f = $(`.pform[data-form="${CSS.escape(k)}"]`); if (!f) return;
+  f.hidden = false;
+  if (!keep) f.querySelector('.msg').textContent = '';
+  f.closest('.pcard').scrollIntoView({block:'nearest'});
+  (f.querySelector('[data-f=base]') || f.querySelector('[data-f=key]')).focus();
+}
+async function saveKey(k){
+  const f = $(`.pform[data-form="${CSS.escape(k)}"]`), msg = f.querySelector('.msg');
+  const key = f.querySelector('[data-f=key]').value, label = f.querySelector('[data-f=label]').value.trim();
+  const base = f.querySelector('[data-f=base]')?.value || '';
+  if (!key.trim() && k !== 'custom'){ f.querySelector('[data-f=key]').focus(); return; }
+  msg.className = 'msg'; msg.textContent = 'Checking the key…';
+  const btn = f.querySelector('[data-save]'); btn.disabled = true;
+  try{
+    const r = await jpost('/api/providers', {key: key || 'none', provider: k, label, base_url: base});
+    const j = await r.json();
+    if (!r.ok){ msg.className = 'msg err'; msg.textContent = j.detail || 'That key did not work.'; return; }
+    openForm = null;
+    await refreshModels();
+    const want = S.model && S.model.startsWith(k + ':') && S.models.find(m => m.full_id === j.provider.id + ':' + S.model.split(':').slice(1).join(':'));
+    if (want) setModel(want.full_id);
+    else if (!curInfo() || curInfo().locked){ const mine = S.models.filter(m => m.provider === j.provider.id); const best = mine.find(m => m.popular && !m.issue) || mine.find(m => !m.issue) || mine[0]; if (best) setModel(best.full_id); }
+    toast(`${j.provider.name} connected: ${j.models.length} models`);
+    await loadSettings();
+  } finally { btn.disabled = false; }
+}
+$('#provlist').addEventListener('click', async e => {
+  const x = e.target.closest('[data-xadd],[data-xsave],[data-xdel]');
+  if (x){
+    const pid = x.dataset.xadd || x.dataset.xsave || x.closest('[data-xm]').dataset.xm, p = SET.providers.find(q => q.id === pid);
+    if (x.dataset.xadd) return openAddModel(pid);
+    if (x.dataset.xdel) return saveExtra(pid, (p.extra_models || []).filter(m => m !== x.dataset.xdel));
+    const v = x.closest('.xform').querySelector('input').value.trim(); if (!v) return;
+    if (await saveExtra(pid, [...new Set([...(p.extra_models || []), v])])){ setModel(pid + ':' + v); toast(`${v} added`); }
+    return;
+  }
+  const t = e.target.closest('[data-add],[data-save],[data-cancel],[data-tog],[data-del]'); if (!t) return;
+  if (t.dataset.add){ openForm = t.dataset.add; focusForm(t.dataset.add); }
+  else if (t.dataset.save) saveKey(t.dataset.save);
+  else if (t.dataset.cancel){ openForm = null; t.closest('.pform').hidden = true; }
+  else if (t.dataset.tog){ const p = SET.providers.find(x => x.id === t.dataset.tog); await jpost('/api/providers/' + p.id, {enabled: !p.enabled}, 'PATCH'); await refreshModels(); loadSettings(); }
+  else if (t.dataset.del){ if (!confirm('Remove this key from Haven?')) return; await api('/api/providers/' + t.dataset.del, {method:'DELETE'}); await refreshModels(); loadSettings(); toast('Key removed'); }
+});
+$('#provlist').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('.pform input')){ e.preventDefault(); saveKey(e.target.closest('.pform').dataset.form); }
+  if (e.key === 'Enter' && e.target.matches('[data-xin]')){ e.preventDefault(); e.target.closest('.xform').querySelector('[data-xsave]').click(); }
+});
+$('#provlocal').addEventListener('click', async e => { if (e.target.closest('[data-retry]')){ await refreshModels(true); loadSettings(); } });
 $('#shieldtg').onchange = () => setShield($('#shieldtg').checked);
-$('#nkind').onchange = () => { $('#nbase').hidden = $('#nkind').value !== 'custom'; };
-$('#addkey').onclick = addKey;
-$('#nkey').onkeydown = e => { if (e.key === 'Enter') addKey(); };
-async function addKey(){
-  const key = $('#nkey').value; if (!key.trim()) { $('#nkey').focus(); return; }
-  const body = {key, label: $('#nlabel').value.trim()};
-  if (!$('#manualrow').hidden && $('#nkind').value){ body.provider = $('#nkind').value; if (body.provider === 'custom') body.base_url = $('#nbase').value; }
+$('#addkey').onclick = addAnyKey;
+$('#nkey').onkeydown = e => { if (e.key === 'Enter') addAnyKey(); };
+async function addAnyKey(){
+  const key = $('#nkey').value; if (!key.trim()){ $('#nkey').focus(); return; }
   $('#keymsg').textContent = 'Checking the key…'; $('#addkey').disabled = true;
   try{
-    const r = await jpost('/api/providers', body);
+    const r = await jpost('/api/providers', {key});
     const j = await r.json();
-    if (!r.ok){
-      $('#keymsg').textContent = j.detail || 'That key did not work.';
-      if (j.unrecognised || r.status === 400) $('#manualrow').hidden = false;
-      return;
-    }
-    $('#nkey').value = ''; $('#nlabel').value = ''; $('#manualrow').hidden = true;
-    $('#keymsg').textContent = `${j.provider.name}${j.provider.label ? ' · ' + j.provider.label : ''}: ${j.models.length} chat models added.`;
+    if (!r.ok){ $('#keymsg').textContent = (j.detail || 'That key did not work.') + (j.unrecognised ? ' Use "Add key" next to the right provider above.' : ''); return; }
+    $('#nkey').value = ''; $('#keymsg').textContent = `${j.provider.name}: ${j.models.length} chat models added.`;
     await refreshModels();
-    if (!curInfo() && j.models[0]) setModel(j.models[0].full_id);
+    if ((!curInfo() || curInfo().locked) && j.models[0]) setModel(j.models[0].full_id);
     toast(`${j.provider.name} connected`);
     loadSettings();
   } finally { $('#addkey').disabled = false; }

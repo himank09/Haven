@@ -68,6 +68,18 @@ def _set_window_icon(window):
         print("icon:", e)
 
 
+def _window_size():
+    """About 80% of the screen (physical pixels), so the window isn't cramped on 125-175% display scaling."""
+    try:
+        import ctypes
+
+        u = ctypes.windll.user32
+        sw, sh = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+        return max(1100, min(int(sw * 0.8), 2400)), max(720, min(int(sh * 0.85), 1500))
+    except Exception:
+        return 1280, 820
+
+
 def main():
     _quiet_streams()
     _windows_identity()
@@ -124,12 +136,13 @@ def main():
                 os.startfile(os.path.dirname(path))
             return True
 
+    width, height = _window_size()
     window = webview.create_window(
         "Haven",
         f"http://127.0.0.1:{port}/?t={token}",
         js_api=Api(),
-        width=1280,
-        height=820,
+        width=width,
+        height=height,
         min_size=(800, 600),
         background_color="#F5F7FC",
     )

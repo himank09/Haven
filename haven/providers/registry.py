@@ -305,6 +305,26 @@ class ModelCache:
 
 CACHE = ModelCache()
 
+# ---------------- model health: remember models that just failed, so the picker can warn ----------------
+HEALTH: Dict[str, dict] = {}  # full model id -> {"issue", "ts"}
+HEALTH_KINDS = {"busy": 20 * 60, "timeout": 20 * 60, "quota": 24 * 3600, "retired": 7 * 24 * 3600, "not_found": 24 * 3600}
+ISSUE_TEXT = {"busy": "busy right now", "timeout": "didn't answer", "quota": "not on your plan", "retired": "retired",
+              "not_found": "not available"}
+
+
+def mark(full_id: str, kind: str):
+    HEALTH[full_id] = {"issue": kind, "ts": time.time()}
+
+
+def issue_of(full_id: str) -> str:
+    h = HEALTH.get(full_id)
+    if not h:
+        return ""
+    if time.time() - h["ts"] > HEALTH_KINDS.get(h["issue"], 0):
+        HEALTH.pop(full_id, None)
+        return ""
+    return ISSUE_TEXT.get(h["issue"], h["issue"])
+
 
 async def poll_forever():
     while True:
@@ -331,7 +351,38 @@ async def all_models(refresh: bool = False) -> dict:
         providers.append({"id": cfg.id, "kind": cfg.kind, "name": cfg.name, "label": cfg.label, "local": False,
                           "status": "unavailable" if err else "ok", "message": err})
         models += st.get("models", [])
-    return {"providers": providers, "models": [m.to_dict() for m in models]}
+    # popular models for providers that aren't connected yet (shown locked: "needs a key")
+    from . import catalog
+
+    connected = {cfg.kind for _e, cfg, _st in cloud}
+    sugg = []
+    if not local.get("ollama", {}).get("models"):
+        sugg += catalog.suggestions("ollama", local=True)
+    kinds = []
+    for kind, name, _style, _b, _p, is_local in TABLE:
+        info = {"kind": kind, "name": name, "local": is_local, "connected": kind in connected, **catalog.INFO.get(kind, {})}
+        kinds.append(info)
+        if not is_local and kind != "custom" and kind not in connected:
+            sugg += catalog.suggestions(kind)
+    # popular models first within each connected provider (catalog order), then the rest as listed
+    rank = {(k, row[0]): i for k, rows in catalog.CATALOG.items() for i, row in enumerate(rows)}
+    out = []
+    for m in models:
+        d = m.to_dict()
+        d["popular"] = (m.kind, m.id) in rank
+        if d["popular"] and d["label"] == d["id"]:  # friendly name for well-known models ("GPT-6.2 Sol")
+            row = catalog.CATALOG[m.kind][rank[(m.kind, m.id)]]
+            d["label"] = row[1]
+        d["issue"] = issue_of(m.full_id)
+        out.append(d)
+    grouped: Dict[str, list] = {}
+    for d in out:
+        grouped.setdefault(d["provider"], []).append(d)
+    final = []
+    for pid, ms in grouped.items():
+        ms.sort(key=lambda d: (not d["popular"], rank.get((d["kind"], d["id"]), 0) if d["popular"] else 0, bool(d["issue"])))
+        final += ms
+    return {"providers": providers, "models": final, "catalog": sugg, "kinds": kinds}
 
 
 async def resolve(full_id: str) -> Tuple[Optional[ProviderConfig], Optional[ModelInfo]]:

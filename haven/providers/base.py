@@ -127,17 +127,25 @@ def human_error(status: int, name: str, body: str = "", retry_after: Optional[st
                 secrets: Iterable[str] = (), model: str = "") -> ProviderError:
     """Map an HTTP status from a provider to one short sentence (brief §3.6)."""
     msg = redact(provider_message(body), secrets)
+    low = (msg or "").lower()
+    who = model or "This model"
     if status in (401, 403):
         return ProviderError(f"Key rejected by {name}. Check it in Settings.", status, "auth")
     if status == 404:
+        if "no longer available" in low or "retired" in low or "deprecated" in low or "discontinued" in low:
+            return ProviderError(f"Model not available on this key: {name} has retired {who} for new keys. Pick a newer model.", status, "retired")
         return ProviderError("Model not available on this key" + (f" ({model})" if model else "") + ". Pick another model.", status, "not_found")
     if status == 413 or (status in (400, 422) and TOO_LONG.search(msg or "")):
         return ProviderError("Too long for this model. Remove a file or start a new chat.", status, "too_long")
     if status == 429:
+        if "quota" in low and ("plan" in low or "billing" in low or "limit: 0" in low or "free" in low):
+            return ProviderError(f"{who} isn't included in your {name} plan (quota exceeded). Pick another model, "
+                                 f"or check billing with {name}.", status, "quota")
         secs = _retry_seconds(retry_after)
         return ProviderError(f"Rate limited, try again in {secs}s." if secs else "Rate limited, try again shortly.", status, "rate")
-    if status == 529:
-        return ProviderError(f"Provider error: {name} is overloaded. Try again in a moment.", status, "server")
+    if status in (503, 529) or "high demand" in low or "overloaded" in low:
+        return ProviderError(f"Provider error: {who} is overloaded right now ({name} reports high demand). "
+                             f"Try again in a minute, or pick another model.", status, "busy")
     if status >= 500:
         return ProviderError(f"Provider error: {name} had a problem ({status}). Try again.", status, "server")
     return ProviderError(f"{name} refused the request" + (f": {msg}" if msg else f" ({status})."), status, "bad_request")
@@ -167,7 +175,8 @@ def network_error(exc: BaseException, name: str, local: bool = False) -> Provide
             return ProviderError(f"Can't reach {name}. Is it running?", 0, "network")
         if isinstance(exc, httpx.ConnectTimeout):
             return ProviderError(f"Can't reach {name}. Check internet.", 0, "network")
-        return ProviderError("Took too long. Try again.", 0, "timeout")
+        return ProviderError(f"Took too long: {name} didn't answer in time. The model may be overloaded; "
+                             f"try again, or pick another model.", 0, "timeout")
     if isinstance(exc, (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError,
                         httpx.NetworkError, httpx.UnsupportedProtocol)):
         if local:

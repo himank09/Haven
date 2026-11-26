@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Haven</title>
 <script>try{const t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}
-try{if(JSON.parse(localStorage.getItem("side"))===false||innerWidth<900)document.documentElement.classList.add("side-off")}catch(e){}</script>
+try{if(JSON.parse(localStorage.getItem("side"))===false||innerWidth<760)document.documentElement.classList.add("side-off")}catch(e){}</script>
 <style>
 @font-face{font-family:"Schibsted Grotesk";font-weight:400;font-display:swap;src:url(/fonts/schibsted-grotesk-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:"Schibsted Grotesk";font-weight:500;font-display:swap;src:url(/fonts/schibsted-grotesk-latin-500-normal.woff2) format("woff2")}
@@ -158,6 +158,16 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .picker li.m.cur .n{font-weight:600;color:var(--brand-text)}
 .picker li.m svg{width:15px;height:15px;color:var(--ink-3)}
 .picker .more{padding:.5rem .7rem;font-size:.82rem;color:var(--ink-3)}
+.picker .sep{margin:.5rem .6rem .2rem;padding-top:.6rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--ink-2)}
+.picker li.m.locked .n{color:var(--ink-2)}
+.picker li.m .pnote.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent);border-radius:6px;padding:0 .4rem;font-size:.74rem;white-space:nowrap}
+.picker .sub2{padding:.45rem .6rem .15rem;font-size:.74rem;color:var(--ink-3)}
+.picker li.m.locked .pnote{font-size:.76rem;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
+.picker .grp .addk{margin-left:auto;height:24px;padding:0 .55rem;border-radius:7px;border:1px solid var(--line);background:var(--surface);font:600 .74rem var(--font);color:var(--brand-text);letter-spacing:0;text-transform:none;cursor:pointer}
+.picker .grp .addk:hover{border-color:var(--brand)}
+.picker li.addrow{display:flex;align-items:center;gap:.55rem;padding:.42rem .6rem;border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--ink-2)}
+.picker li.addrow:hover{background:var(--sunken)}
+.pill.locked .led{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 20%,transparent)}
 .picker .foot{display:flex;gap:.4rem;align-items:center;padding:.5rem .6rem;border-top:1px solid var(--line);font-size:.8rem;color:var(--ink-3)}
 .picker .foot .sp{flex:1}
 
@@ -167,16 +177,17 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .stage.empty{padding-bottom:4vh}
 .stage.empty .hero{margin-top:auto}
 .stage.empty .dock{margin-bottom:auto;position:static}
-.hero{text-align:center;padding:2rem 0 1.4rem;animation:rise .7s var(--ease) both}
-.hero .arch{width:64px;height:64px;margin:0 auto 1.1rem;border-radius:20px;background:var(--grad);display:grid;place-items:center;box-shadow:0 18px 40px -14px color-mix(in srgb,var(--brand) 75%,transparent)}
-.hero h1{font-size:clamp(1.8rem,4.2vw,2.8rem);font-weight:800;letter-spacing:-.035em;line-height:1.05}
+.hero{text-align:center;padding:1.5rem 0 1.2rem;animation:rise .7s var(--ease) both}
+.hero .arch{width:52px;height:52px;margin:0 auto 1rem;border-radius:16px;background:var(--grad);display:grid;place-items:center;box-shadow:0 18px 40px -14px color-mix(in srgb,var(--brand) 75%,transparent)}
+.hero h1{font-size:clamp(1.6rem,3.4vw,2.3rem);font-weight:800;letter-spacing:-.03em;line-height:1.1}
 .hero h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero p{color:var(--ink-2);font-size:1.05rem;margin-top:.7rem}
+.hero p{color:var(--ink-2);font-size:1rem;margin-top:.5rem}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-.onboard{margin:1rem auto 0;max-width:560px;padding:1rem 1.1rem;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh-2);text-align:left}
-.onboard b{display:block;margin-bottom:.25rem}
-.onboard p{color:var(--ink-2);font-size:.92rem;margin:0 0 .7rem}
-.onboard .row{display:flex;gap:.5rem;flex-wrap:wrap}
+.onboard{margin:1rem auto 0;max-width:640px;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.65rem .7rem .65rem 1rem;border-radius:var(--r);
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh-1);text-align:left;font-size:.9rem}
+.onboard .t{flex:1;min-width:200px;color:var(--ink-2)}
+.onboard .t b{color:var(--ink)}
+.onboard .row{display:flex;gap:.4rem;flex-wrap:wrap;margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:.45rem;justify-content:center;margin-top:1rem}
 .chip{height:34px;padding:0 .85rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:.86rem;color:var(--ink-2);box-shadow:var(--sh-1)}
 .chip:hover{border-color:var(--brand);color:var(--ink)}
@@ -318,11 +329,13 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 .tobottom:hover{color:var(--ink)}
 
 /* tool tiles (empty state) */
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:.65rem;margin-top:1.2rem}
-.tile{display:flex;flex-direction:column;align-items:flex-start;gap:.65rem;padding:.9rem .9rem .85rem;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-align:left;box-shadow:var(--sh-1);transition:transform .22s var(--ease),box-shadow .22s var(--ease),border-color .22s}
-.tile:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:var(--line-2)}
-.tile .d{width:36px;height:36px;border-radius:11px;display:grid;place-items:center}
-.tile b{font-weight:600;font-size:.92rem;line-height:1.25}
+.tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:.45rem;margin-top:1rem}
+.tile{display:inline-flex;align-items:center;gap:.45rem;height:36px;padding:0 .85rem 0 .45rem;border-radius:999px;background:var(--surface);border:1px solid var(--line);
+  font-size:.88rem;box-shadow:var(--sh-1);transition:border-color .15s,box-shadow .15s}
+.tile:hover{border-color:var(--line-2);box-shadow:var(--sh-2)}
+.tile .d{width:26px;height:26px;border-radius:8px;display:grid;place-items:center}
+.tile .d svg{width:15px;height:15px}
+.tile b{font-weight:500}
 .hint{display:flex;justify-content:center;gap:.4rem;align-items:center;margin-top:1rem;font-size:.8rem;color:var(--ink-3)}
 .stage:not(.empty) .tiles,.stage:not(.empty) .hint,.stage:not(.empty) .chips,.stage.hasfiles .tiles,.stage.hasfiles .hint{display:none}
 .stage.empty .foot{display:none}
@@ -377,14 +390,78 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 .pal li.it .d svg{width:15px;height:15px}
 .pal li.it .k{margin-left:auto;font-size:.74rem;color:var(--ink-3)}
 .pal li.it.on{background:var(--sunken)}
-.sheet{position:fixed;top:0;right:0;bottom:0;z-index:51;width:min(460px,100vw);background:var(--raised);border-left:1px solid var(--line);box-shadow:var(--sh-3);padding:1.25rem 1.35rem;overflow:auto;transform:translateX(102%);transition:transform .3s var(--ease);visibility:hidden}
-.sheet.on{transform:none;visibility:visible}
-.sheet header{display:flex;align-items:center;margin-bottom:1rem}
-.sheet h2{font-size:1.2rem;font-weight:800;letter-spacing:-.02em;margin-right:auto}
-.sec{padding:1.1rem 0;border-top:1px solid var(--line)}
-.sec h3{font-size:.95rem;font-weight:700;margin-bottom:.7rem;display:flex;align-items:center;gap:.5rem}
-.sec h3 .d{width:26px;height:26px;border-radius:8px;display:grid;place-items:center}
-.sec h3 .d svg{width:14px;height:14px}
+/* settings: a centred dialog with sections */
+.dlg{position:fixed;left:50%;top:50%;z-index:51;width:min(920px,94vw);height:min(700px,90vh);transform:translate(-50%,-48%) scale(.98);opacity:0;visibility:hidden;
+  display:grid;grid-template-columns:220px minmax(0,1fr);background:var(--raised);border:1px solid var(--line);border-radius:var(--r-l);box-shadow:var(--sh-3);overflow:hidden;
+  transition:opacity .2s var(--ease),transform .2s var(--ease)}
+.dlg.on{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}
+.dlg-nav{background:var(--sunken);border-right:1px solid var(--line);padding:1.1rem .7rem;display:flex;flex-direction:column;gap:.15rem}
+.dlg-nav h2{font-size:1.15rem;font-weight:800;letter-spacing:-.02em;padding:.1rem .6rem .8rem}
+.tab{display:flex;align-items:center;gap:.6rem;height:38px;padding:0 .7rem;border:0;border-radius:10px;background:none;color:var(--ink-2);font-weight:500;font-size:.92rem;text-align:left}
+.tab:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+.tab.on{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1);font-weight:600}
+.tab svg{width:17px;height:17px}
+.dlg-body{position:relative;overflow-y:auto;padding:1.4rem 1.6rem 1.6rem}
+.dlg-x{position:absolute;top:.8rem;right:.8rem}
+.tabp h3{font-size:1.2rem;font-weight:700;letter-spacing:-.01em;margin:0 2.5rem .3rem 0}
+.tabp .lead{color:var(--ink-2);font-size:.92rem;margin:0 0 1rem}
+.grp-h{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin:1.2rem 0 .4rem}
+.plist{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.pcard+.pcard{border-top:1px solid var(--line)}
+.prow{display:flex;align-items:center;gap:.8rem;padding:.75rem .9rem}
+.mono{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font:700 .82rem var(--font);flex:none;
+  color:hsl(var(--h) 65% 38%);background:hsl(var(--h) 70% 92%)}
+:root[data-theme=dark] .mono{color:hsl(var(--h) 80% 75%);background:hsl(var(--h) 40% 18%)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .mono{color:hsl(var(--h) 80% 75%);background:hsl(var(--h) 40% 18%)}}
+.pinfo{flex:1;min-width:0}
+.pname{display:flex;align-items:center;gap:.5rem;font-weight:600;font-size:.95rem}
+.pdesc{font-size:.84rem;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pact{display:flex;gap:.4rem;align-items:center;flex:none}
+.stat{display:inline-flex;align-items:center;gap:.35rem;height:22px;padding:0 .55rem;border-radius:999px;font-size:.74rem;font-weight:600;white-space:nowrap}
+.stat::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.stat.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.stat.off{color:var(--ink-2);background:var(--sunken)}
+.stat.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.pkey{display:flex;align-items:center;gap:.6rem;padding:.45rem .9rem .45rem 3.85rem;font-size:.86rem;color:var(--ink-2)}
+.pkey .k{font:600 .82rem var(--mono);color:var(--ink)}
+.pkey .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pkey.off{opacity:.6}
+.xm{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;padding:0 .9rem .6rem 3.85rem;font-size:.84rem}
+.xchip{display:inline-flex;align-items:center;gap:.2rem;height:24px;padding:0 .2rem 0 .55rem;border-radius:7px;background:var(--sunken);font:.78rem var(--mono)}
+.xchip button{width:20px;height:20px;border:0;background:none;color:var(--ink-3);display:grid;place-items:center;border-radius:5px}
+.xchip button:hover{background:var(--line);color:var(--ink)}
+.xform{display:inline-flex;gap:.35rem;align-items:center}
+.xform .fld{height:30px;width:260px}
+.pform{margin:0 .9rem .9rem 3.85rem;padding:.8rem;border-radius:12px;background:var(--sunken);display:grid;gap:.5rem}
+.pform .row{margin-top:0}
+.pform .msg{font-size:.84rem;color:var(--ink-2);min-height:1.1em}
+.pform .msg.err{color:var(--err)}
+.anykey{margin-top:1.1rem;font-size:.9rem}
+.anykey summary{cursor:pointer;color:var(--ink-2)}
+.lockline{display:flex;gap:.45rem;align-items:center;margin-top:1rem}
+.lockline svg{width:15px;height:15px;flex:none}
+.setrow{display:flex;align-items:flex-start;gap:.9rem;padding:.9rem 1rem}
+.setrow+.setrow{border-top:1px solid var(--line)}
+.setrow .grow{flex:1;min-width:0}
+.setrow b{display:block;font-weight:600}
+.setrow p{margin:.15rem 0 0;font-size:.86rem;color:var(--ink-2)}
+.switch{position:relative;width:44px;height:26px;flex:none;margin-top:.1rem}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.switch span{position:absolute;inset:0;border-radius:999px;background:var(--line-2);transition:background .2s}
+.switch span::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh-1);transition:transform .2s var(--ease)}
+.switch input:checked+span{background:var(--ok)}
+.switch input:checked+span::after{transform:translateX(18px)}
+.switch input:focus-visible+span{outline:2px solid var(--brand);outline-offset:2px}
+.ticks{margin:.4rem 0 0;padding-left:1.1rem;font-size:.88rem;color:var(--ink-2)}
+.ticks li{margin:.15rem 0}
+.kbdgrid{display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;font-size:.9rem;align-items:center}
+.kbdgrid span{color:var(--ink-2)}
+@media (max-width:720px){
+  .dlg{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  .dlg-nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:.6rem}
+  .dlg-nav h2{display:none}
+  .pkey,.pform{padding-left:.9rem;margin-left:.9rem}
+}
 .row{display:flex;gap:.5rem;align-items:center;margin-top:.55rem}
 .fld{flex:1;min-width:0;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 .75rem;outline:0}
 .fld:focus{border-color:var(--brand)}
@@ -407,11 +484,10 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
 :root[data-theme=dark] .toast button{color:var(--brand-ink)}
 
 /* narrow windows: the sidebar becomes a drawer */
-@media (max-width:900px){
+@media (max-width:760px){
   .app,.side-off .app{grid-template-columns:0 minmax(0,1fr)}
   .side{position:fixed;left:0;top:0;bottom:0;width:var(--side-w);transform:translateX(-102%);transition:transform .25s var(--ease);box-shadow:var(--sh-3)}
   .side-open .side{transform:none}
-  .tiles{grid-template-columns:repeat(2,1fr)}
   .brand .word{display:none}
   .pill{max-width:52vw}
 }
@@ -429,7 +505,7 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
       </div>
       <div class="side-search"><span id="ic-cq"></span><input id="cq" placeholder="Search chats" autocomplete="off" spellcheck="false" aria-label="Search chats"></div>
       <nav class="convs" id="convs"></nav>
-      <div class="side-foot"><span class="st ok" id="sidestatus">Haven</span></div>
+      <div class="side-foot"><span class="st ok" id="sidestatus">Haven 1.0</span></div>
     </div>
   </aside>
 
@@ -449,12 +525,11 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
       <div class="stage empty" id="stage">
         <section class="hero" id="hero">
           <div class="arch" id="heroarch"></div>
-          <h1 id="greet">Drop a file <span>to get started</span></h1>
-          <p id="heroP">PDFs, photos, Word files, slides. Or just ask something.</p>
+          <h1 id="greet">What can I help with?</h1>
+          <p id="heroP">Ask anything, or drop a PDF, photo or document to work on it.</p>
           <div class="onboard" id="onboard" hidden>
-            <b>No AI model yet</b>
-            <p>Start Ollama for private AI on this PC, or add a key from a cloud provider in Settings. The file tools work either way.</p>
-            <div class="row"><button class="btn primary" id="ob-key">Add a key</button><button class="btn" id="ob-ollama">Get Ollama</button><button class="btn ghost" id="ob-retry">Check again</button></div>
+            <span class="t"><b>No AI model connected yet.</b> Start Ollama to use AI privately on this PC, or add a key. The file tools below work either way.</span>
+            <div class="row"><button class="btn small primary" id="ob-key">Add a key</button><button class="btn small" id="ob-ollama">Get Ollama</button><button class="btn small ghost" id="ob-retry">Check again</button></div>
           </div>
           <div class="chips" id="chips"></div>
         </section>
@@ -497,31 +572,66 @@ kbd{font:600 .7rem var(--mono);padding:.12rem .38rem;border:1px solid var(--line
   <div class="foot"><span id="pstat"></span><span class="sp"></span><button class="btn small ghost" id="prefresh">Refresh</button><button class="btn small" id="paddkey">Add a key</button></div>
 </div>
 <div class="pal" id="pal"><div class="q"><span id="palicon"></span><input id="palq" placeholder="Search tools" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div><ul id="pall"></ul></div>
-<aside class="sheet" id="sheet" aria-label="Settings">
-  <header><h2>Settings</h2><button class="ib" id="b-close" title="Close"></button></header>
-  <div class="sec">
-    <h3><span class="d c-ai" id="ic-keys"></span>AI providers</h3>
-    <div class="row"><input class="fld" type="password" id="nkey" placeholder="Paste an API key (OpenAI, Claude, Gemini, Groq…)" autocomplete="off" spellcheck="false"><button class="btn primary" id="addkey">Add</button></div>
-    <div class="row" id="manualrow" hidden><select class="fld" id="nkind"></select><input class="fld" id="nbase" placeholder="Base URL, e.g. http://localhost:8000" hidden></div>
-    <div class="row"><input class="fld" id="nlabel" placeholder="Label (optional), e.g. Work" autocomplete="off"></div>
-    <p class="small" id="keymsg" style="margin-top:.5rem"></p>
-    <div id="provlist"></div>
-    <p class="small" id="storagenote" style="margin-top:.6rem"></p>
+<div class="dlg" id="sheet" role="dialog" aria-modal="true" aria-labelledby="dlgtitle">
+  <nav class="dlg-nav" aria-label="Settings sections">
+    <h2 id="dlgtitle">Settings</h2>
+    <button class="tab on" data-tab="models"><span id="ic-keys"></span>Models &amp; keys</button>
+    <button class="tab" data-tab="privacy"><span id="ic-shield"></span>Privacy</button>
+    <button class="tab" data-tab="addons"><span id="ic-ext"></span>Add-ons</button>
+    <button class="tab" data-tab="about"><span id="ic-about"></span>About</button>
+  </nav>
+  <div class="dlg-body" id="dlgbody">
+    <button class="ib dlg-x" id="b-close" title="Close (Esc)"></button>
+    <section class="tabp" data-p="models">
+      <h3>Models &amp; keys</h3>
+      <p class="lead">Local models run on this PC and keep everything private. Cloud models need a key from that provider; add as many as you like.</p>
+      <div class="grp-h">On this PC</div>
+      <div class="plist" id="provlocal"></div>
+      <div class="grp-h">Cloud providers</div>
+      <div class="plist" id="provlist"></div>
+      <details class="anykey"><summary>Not sure which provider a key belongs to?</summary>
+        <div class="row"><input class="fld" type="password" id="nkey" placeholder="Paste any key: Haven works out the provider" autocomplete="off" spellcheck="false"><button class="btn primary" id="addkey">Add</button></div>
+        <p class="small" id="keymsg" style="margin-top:.4rem"></p>
+      </details>
+      <p class="small lockline" id="storagenote"></p>
+    </section>
+    <section class="tabp" data-p="privacy" hidden>
+      <h3>Privacy</h3>
+      <p class="lead">File tools and local models never send anything off this PC. These settings decide what happens when you pick a cloud model.</p>
+      <div class="plist">
+        <div class="setrow">
+          <div class="grow"><b>Privacy Shield</b><p>Hide personal details before anything goes to a cloud model. Answers show the real values again, only on this PC.</p>
+            <ul class="ticks"><li>Phone numbers and email addresses</li><li>PAN, Aadhaar and card numbers</li><li>IFSC codes and UPI IDs</li></ul></div>
+          <label class="switch" title="Privacy Shield"><input type="checkbox" id="shieldtg" checked aria-label="Privacy Shield"><span></span></label>
+        </div>
+        <div class="setrow"><div class="grow"><b>Photos and scanned pages</b><p>The shield can't read inside images, so Haven asks once per chat before sending them to a cloud model.</p></div></div>
+        <div class="setrow"><div class="grow"><b>Where your chats live</b><p id="datapath">In a database on this PC. Attached files aren't stored, only their names.</p></div></div>
+      </div>
+    </section>
+    <section class="tabp" data-p="addons" hidden>
+      <h3>Add-ons</h3>
+      <p class="lead">Optional free programs that unlock more file tools.</p>
+      <div class="plist">
+        <div class="setrow"><div class="grow"><b>Ghostscript <span id="gsstatus"></span></b><p>Makes compressed PDFs noticeably smaller. Get the 64-bit installer from <a class="linkish" data-ext="https://ghostscript.com/releases/gsdnld.html">ghostscript.com</a>.</p></div></div>
+        <div class="setrow"><div class="grow"><b>LibreOffice <span id="lostatus"></span></b><p>Word, Excel and PowerPoint conversions. Install with:</p><span class="cmd">winget install -e --id TheDocumentFoundation.LibreOffice</span></div></div>
+      </div>
+    </section>
+    <section class="tabp" data-p="about" hidden>
+      <h3>About Haven</h3>
+      <p class="lead" id="about">Haven</p>
+      <div class="grp-h">Keyboard shortcuts</div>
+      <div class="kbdgrid">
+        <kbd>Enter</kbd><span>Send (Shift+Enter for a new line)</span>
+        <kbd>Esc</kbd><span>Stop the answer, or close what's open</span>
+        <kbd>Ctrl M</kbd><span>Pick a model</span>
+        <kbd>Ctrl N</kbd><span>New chat</span>
+        <kbd>Ctrl K</kbd><span>Search all tools</span>
+        <kbd>Ctrl Shift F</kbd><span>Search your chats</span>
+        <kbd>&uarr;</kbd><span>Edit your last message (in an empty box)</span>
+      </div>
+    </section>
   </div>
-  <div class="sec">
-    <h3><span class="d c-conv" id="ic-shield"></span>Privacy Shield</h3>
-    <label class="row" style="margin-top:0;cursor:pointer"><input type="checkbox" id="shieldtg" checked> <span>Hide personal details before anything goes to a cloud model</span></label>
-    <p class="small" style="margin-top:.45rem">Phone numbers, emails, PAN, Aadhaar, card numbers, IFSC codes and UPI IDs are replaced with placeholders like [PHONE_1]. The real values never leave this PC; answers show them again here. Local models get everything as written. Images and scanned pages can't be checked, so Haven asks first.</p>
-  </div>
-  <div class="sec">
-    <h3><span class="d c-office" id="ic-ext"></span>Add-ons</h3>
-    <div class="kv"><span>Ghostscript</span><div id="gsstatus">–</div><span>LibreOffice</span><div id="lostatus">–</div></div>
-    <p class="small">Ghostscript makes PDFs smaller. LibreOffice handles Word, Excel and PowerPoint.</p>
-    <p class="small">Ghostscript: get the 64-bit installer from <a data-ext="https://ghostscript.com/releases/gsdnld.html">ghostscript.com</a>. LibreOffice:</p>
-    <span class="cmd">winget install -e --id TheDocumentFoundation.LibreOffice</span>
-  </div>
-  <div class="sec"><p class="small" id="about"></p></div>
-</aside>
+</div>
 <div class="toast" id="toast" role="status"><span id="toasttxt"></span><button id="toastbtn" hidden>Undo</button></div>
 <script src="/web/md.js"></script>
 <script src="/web/app.js"></script>
