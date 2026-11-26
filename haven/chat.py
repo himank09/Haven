@@ -149,6 +149,13 @@ async def resolve_or_400(model_id: str) -> Tuple[ProviderConfig, ModelInfo]:
         raise HTTPException(400, "Pick a model first")
     cfg, model = await registry.resolve(model_id)
     if not cfg or not model:
+        from haven.providers import catalog
+
+        hit = catalog.find(model_id)
+        if hit and hit[0] != "ollama":  # a suggested model whose provider has no key yet
+            name = registry.name_of(hit[0])
+            art = "an" if name[0] in "AEIOU" or name == "xAI" else "a"
+            raise HTTPException(400, f"{hit[1][1]} needs {art} {name} API key. Add it in Settings → Models & keys.")
         raise HTTPException(400, "Model no longer available, pick another")
     return cfg, model
 

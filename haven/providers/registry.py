@@ -331,7 +331,20 @@ async def all_models(refresh: bool = False) -> dict:
         providers.append({"id": cfg.id, "kind": cfg.kind, "name": cfg.name, "label": cfg.label, "local": False,
                           "status": "unavailable" if err else "ok", "message": err})
         models += st.get("models", [])
-    return {"providers": providers, "models": [m.to_dict() for m in models]}
+    # popular models for providers that aren't connected yet (shown locked: "needs a key")
+    from . import catalog
+
+    connected = {cfg.kind for _e, cfg, _st in cloud}
+    sugg = []
+    if not local.get("ollama", {}).get("models"):
+        sugg += catalog.suggestions("ollama", local=True)
+    kinds = []
+    for kind, name, _style, _b, _p, is_local in TABLE:
+        info = {"kind": kind, "name": name, "local": is_local, "connected": kind in connected, **catalog.INFO.get(kind, {})}
+        kinds.append(info)
+        if not is_local and kind != "custom" and kind not in connected:
+            sugg += catalog.suggestions(kind)
+    return {"providers": providers, "models": [m.to_dict() for m in models], "catalog": sugg, "kinds": kinds}
 
 
 async def resolve(full_id: str) -> Tuple[Optional[ProviderConfig], Optional[ModelInfo]]:
