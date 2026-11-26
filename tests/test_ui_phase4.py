@@ -182,7 +182,7 @@ def test_locked_popular_model_explains_and_unlocks_after_adding_key(pg, live, hu
     pg.click("#pill")
     rows = pg.locator("#pl li.m:not(.locked)").all_inner_texts()
     openai_rows = [r for r in rows if "gpt" in r.lower() or "o4" in r]
-    assert openai_rows[0].startswith("GPT-6.2 Astra") and openai_rows[1].startswith("GPT-6.2 Sol")  # popular first, friendly names
+    assert openai_rows[0].startswith("GPT-6.2 Sol") and openai_rows[1].startswith("GPT-6.2 Astra")  # everyday model first, friendly names
     assert "More OpenAI models" in pg.inner_text("#pl")
     assert pg.locator("#pl li.m.locked", has_text="GPT-6.2").count() == 0
 
@@ -222,3 +222,22 @@ def test_failing_model_is_marked_in_picker(pg, live, hub, monkeypatch):
     pg.click("#pill")
     pg.wait_for_function("[...document.querySelectorAll('#pl li.m')].some(li => li.innerText.includes('gpt-6.2-sol') && li.innerText.includes('busy right now'))", timeout=3000)
     registry.HEALTH.clear()
+
+
+
+def test_fresh_window_defaults_to_free_plan_gemini_and_lists_it_above_ollama(browser, live, hub, monkeypatch):
+    """Seen on a real free-tier key: the first popular Gemini model used to be a paid-only one."""
+    monkeypatch.setenv("HAVEN_BASE_OLLAMA", "http://127.0.0.1:9")     # Ollama not running
+    monkeypatch.setenv("HAVEN_BASE_LMSTUDIO", "http://127.0.0.1:9/v1")
+    hub["gemini"].models = {"models": [{"name": f"models/{n}", "supportedGenerationMethods": ["generateContent"], "thinking": True}
+                                       for n in ("gemini-3.8-flash", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-3.5-flash-lite")]}
+    add_key(live, K.GEMINI)
+    ctx, page = new_page(browser, live)  # fresh window: no remembered model
+    open_app(page, live)
+    assert "Gemini 3.5 Flash-Lite" in page.inner_text("#pill")
+    page.click("#pill")
+    groups = [g.splitlines()[0].lower() for g in page.locator("#pl .grp").all_inner_texts()]
+    assert groups.index("google gemini") < groups.index("ollama")  # connected provider before download suggestions
+    first = page.locator("#pl li.m").first.inner_text()
+    assert first.startswith("Gemini 3.5 Flash-Lite")
+    ctx.close()
