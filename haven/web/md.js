@@ -22,11 +22,30 @@
   const TSEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
   const P0 = '\u0000';
 
+  /* ---------- math (KaTeX, vendored in /web/vendor/katex; works offline) ----------
+     trust:false keeps \href, \url, \includegraphics and \html* commands disabled, so model output can't
+     add links, images or styles through math; maxExpand/maxSize stop macro bombs. Without KaTeX the
+     formula is shown as code instead. */
+  const MATH_OPEN = /^\s*(\$\$|\\\[)\s*$/, MATH_CLOSE = /^\s*(\$\$|\\\])\s*$/;
+  function math(tex, display) {
+    tex = String(tex).trim();
+    if (!tex) return '';
+    const k = root.katex;
+    if (k && k.renderToString) {
+      try {
+        const html = k.renderToString(tex, {displayMode: !!display, throwOnError: false, trust: false, strict: 'ignore',
+                                            maxSize: 20, maxExpand: 500, output: 'htmlAndMathml'});
+        return display ? `<div class="math-block">${html}</div>` : `<span class="math">${html}</span>`;
+      } catch (e) { /* fall through */ }
+    }
+    return display ? `<pre class="math-raw"><code>${esc(tex)}</code></pre>` : `<code class="math-raw">${esc(tex)}</code>`;
+  }
+
   /* ---------- blocks ---------- */
   function split(src) {
     const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
     const out = [];
-    let cur = [], fence = null;
+    let cur = [], fence = null, mblock = false;
     const flush = () => { if (cur.length) { out.push(cur.join('\n')); cur = []; } };
     for (const ln of lines) {
       if (fence) {
@@ -35,6 +54,12 @@
         if (m && m[1][0] === fence[0] && m[1].length >= fence.length) { fence = null; flush(); }
         continue;
       }
+      if (mblock) {  // a $$ ... $$ or \[ ... \] block spanning several lines
+        cur.push(ln);
+        if (MATH_CLOSE.test(ln)) { mblock = false; flush(); }
+        continue;
+      }
+      if (MATH_OPEN.test(ln)) { flush(); mblock = true; cur.push(ln); continue; }
       const f = ln.match(FENCE);
       if (f) { flush(); fence = f[1]; cur.push(ln); continue; }
       if (!ln.trim()) { flush(); continue; }
@@ -51,6 +76,12 @@
 
   function block(b, o, depth) {
     const lines = b.split('\n');
+    if (MATH_OPEN.test(lines[0])) {
+      const closed = lines.length > 1 && MATH_CLOSE.test(lines[lines.length - 1]);
+      const body = lines.slice(1, closed ? -1 : undefined).join('\n');
+      // still streaming (no closing line yet): show the formula as text until it is complete
+      return closed ? math(body, true) : `<p class="math-pending">${esc(lines.join('\n'))}</p>`;
+    }
     const f = lines[0].match(FENCE);
     if (f) {
       let body = lines.slice(1);
@@ -195,6 +226,16 @@
     const put = html => { keep.push(html); return P0 + (keep.length - 1) + P0; };
     if (s.length >= LONG) s = s.replace(/\S{1000,}/g, r => /^https?:\/\//.test(r) && r.length < 2000 ? r : put(longRun(r)));
     s = s.replace(/(`+)([^`\n]+?)\1/g, (_, _t, c) => put(`<code>${esc(c)}</code>`));
+    // math: \$ is a literal dollar; $$..$$ and \[..\] display, \(..\) and $..$ inline.
+    // A $..$ pair must hug its content ("$x$", not "$5 and $10") and not be followed by a digit.
+    if (s.includes('$') || s.includes('\\(') || s.includes('\\[')) {
+      s = s.replace(/\\\$/g, () => put('$'));
+      s = s.replace(/\$\$([^$]+?)\$\$/g, (_, t) => put(math(t, true)));
+      s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => put(math(t, true)));
+      s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, t) => put(math(t, false)));
+      s = s.replace(/(^|[^\w$])\$(?=[^\s$])([^$\n]{0,800}?[^\s\\$])\$(?![\w$])/g, (all, pre, t) => pre + put(math(t, false)));
+      s = s.replace(/(^|[^\w$])\$([^\s$\\])\$(?![\w$])/g, (all, pre, t) => pre + put(math(t, false)));  // single character, e.g. $x$
+    }
     s = s.replace(/!\[([^\]\n]{0,300})\]\(([^()\s]{1,2000})(?:\s+"[^"\n]*")?\)/g, (_, alt) => put(`<span class="img-alt">[image${alt ? ': ' + esc(alt) : ''}]</span>`));
     s = s.replace(/\[([^\]\n]{1,500})\]\(([^()\s]{1,2000})(?:\s+"[^"\n]*")?\)/g, (_, t, u) => put(link(t, u, o)));
     s = s.replace(/\bhttps?:\/\/[^\s<>()"'`]{1,2000}[^\s<>()"'`.,;:!?]/g, u => put(link(null, u, o)));

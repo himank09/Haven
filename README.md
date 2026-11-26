@@ -147,4 +147,4 @@ haven/web/           the interface: plain HTML, CSS and JavaScript with no CDN, 
 ```
 
 ## License
-MIT, see [LICENSE](LICENSE). The bundled Schibsted Grotesk font is under the SIL Open Font License.
+MIT, see [LICENSE](LICENSE). The bundled Schibsted Grotesk font is under the SIL Open Font License. Math in answers is drawn with [KaTeX](https://katex.org) (MIT, bundled in `haven/web/vendor/katex`, so it works offline).
